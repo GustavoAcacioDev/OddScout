@@ -1,0 +1,6 @@
+@odd_scout_HostAddress = http://localhost:5286
+
+GET {{odd_scout_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
