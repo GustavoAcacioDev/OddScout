@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OddScout.Application.Users.Queries.GetUserProfile;
-using System.Security.Claims;
 
 namespace OddScout.API.Controllers;
 
@@ -11,7 +10,7 @@ public class UsersController : BaseController
     [HttpGet("profile")]
     public async Task<IActionResult> GetProfile()
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = GetCurrentUserId(); // MUDADO: Usar método do BaseController
         var query = new GetUserProfileQuery(userId);
         var result = await Mediator.Send(query);
         return Ok(result);

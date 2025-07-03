@@ -12,6 +12,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Event> Events { get; set; } = null!;
     public DbSet<Odd> Odds { get; set; } = null!;
     public DbSet<ValueBet> ValueBets { get; set; } = null!;
+    public DbSet<Bet> Bets { get; set; } = null!; // Nova adição
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
