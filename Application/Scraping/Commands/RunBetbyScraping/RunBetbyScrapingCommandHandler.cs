@@ -29,7 +29,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
         {
             _logger.LogInformation("Starting Betby scraping process...");
 
-            // Executar scraping
             var scrapedEvents = await _betbyScrapingService.ScrapeEventsAsync(cancellationToken);
 
             if (!scrapedEvents.Any())
@@ -38,7 +37,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
                 return 0;
             }
 
-            // Limpar eventos antigos do Betby
             var oldBetbyEvents = await _context.Events
                 .Where(e => e.Source == OddsSource.Betby)
                 .ToListAsync(cancellationToken);
@@ -51,7 +49,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
             {
                 try
                 {
-                    // Parse da data
                     if (!DateTime.TryParse(scrapedEvent.DateTime, out var eventDateTime))
                     {
                         _logger.LogWarning("Failed to parse datetime: {DateTime}", scrapedEvent.DateTime);
@@ -60,13 +57,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
 
                     eventDateTime = DateTime.SpecifyKind(eventDateTime, DateTimeKind.Utc);
 
-                    // 🔍 ADICIONAR ESTES LOGS DETALHADOS
-                    _logger.LogInformation("🔍 PROCESSING SCRAPED EVENT:");
-                    _logger.LogInformation("  - Team1: {Team1} vs Team2: {Team2}", scrapedEvent.Team1, scrapedEvent.Team2);
-                    _logger.LogInformation("  - RAW ODDS: Team1='{OddTeam1}', Draw='{OddDraw}', Team2='{OddTeam2}'",
-                        scrapedEvent.OddTeam1, scrapedEvent.OddDraw, scrapedEvent.OddTeam2);
-
-                    // Parse das odds com cultura específica
                     var culture = System.Globalization.CultureInfo.InvariantCulture;
 
                     if (!decimal.TryParse(scrapedEvent.OddTeam1, System.Globalization.NumberStyles.Any, culture, out var oddTeam1) ||
@@ -74,12 +64,10 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
                         !decimal.TryParse(scrapedEvent.OddTeam2, System.Globalization.NumberStyles.Any, culture, out var oddTeam2) ||
                         oddTeam1 <= 0 || oddDraw <= 0 || oddTeam2 <= 0)
                     {
-                        _logger.LogError("❌ FAILED TO PARSE ODDS: Team1='{T1}', Draw='{D}', Team2='{T2}'",
-                            scrapedEvent.OddTeam1, scrapedEvent.OddDraw, scrapedEvent.OddTeam2);
+                        _logger.LogWarning("Invalid odds for event: {Team1} vs {Team2}", scrapedEvent.Team1, scrapedEvent.Team2);
                         continue;
                     }
 
-                    // Criar evento
                     var eventEntity = new Event(
                         scrapedEvent.League,
                         eventDateTime,
@@ -91,7 +79,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
 
                     _context.Events.Add(eventEntity);
 
-                    // Criar odds
                     var oddEntity = new Odd(
                         eventEntity.Id,
                         MarketType.Match1X2,
@@ -100,10 +87,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
                         oddTeam2,
                         OddsSource.Betby
                     );
-
-                    // 🔍 VERIFICAR AS ODDS QUE VÃO PARA O BANCO
-                    _logger.LogInformation("💾 SAVING TO DB: Team1={T1}, Draw={D}, Team2={T2}",
-                        oddEntity.Team1Odd, oddEntity.DrawOdd, oddEntity.Team2Odd);
 
                     _context.Odds.Add(oddEntity);
                     savedCount++;

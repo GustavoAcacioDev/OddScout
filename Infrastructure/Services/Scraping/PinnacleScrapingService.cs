@@ -25,45 +25,6 @@ public class PinnacleScrapingService : IPinnacleScrapingService
         _httpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
     }
 
-    private void LogEventDebugInfo(PinnacleEvent eventData, int eventIndex)
-    {
-        _logger.LogInformation("=== DEBUG EVENT {Index} ===", eventIndex);
-        _logger.LogInformation("League: {League}", eventData.LeagueName);
-        _logger.LogInformation("Home: {Home}", eventData.Home);
-        _logger.LogInformation("Away: {Away}", eventData.Away);
-        _logger.LogInformation("Starts: {Starts}", eventData.Starts);
-
-        if (eventData.Periods != null)
-        {
-            _logger.LogInformation("Periods object exists");
-
-            if (eventData.Periods.Num0 != null)
-            {
-                _logger.LogInformation("Num0 object exists");
-
-                if (eventData.Periods.Num0.MoneyLine != null)
-                {
-                    var ml = eventData.Periods.Num0.MoneyLine;
-                    _logger.LogInformation("MoneyLine - Home: {Home}, Draw: {Draw}, Away: {Away}",
-                        ml.Home, ml.Draw, ml.Away);
-                }
-                else
-                {
-                    _logger.LogInformation("MoneyLine is NULL");
-                }
-            }
-            else
-            {
-                _logger.LogInformation("Num0 is NULL");
-            }
-        }
-        else
-        {
-            _logger.LogInformation("Periods is NULL");
-        }
-        _logger.LogInformation("=== END DEBUG EVENT {Index} ===", eventIndex);
-    }
-
     public async Task<List<ScrapedEventDto>> ScrapeEventsAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -85,10 +46,7 @@ public class PinnacleScrapingService : IPinnacleScrapingService
             var endpoint = "/kit/v1/markets?is_have_odds=true&sport_id=1";
             var fullUrl = $"https://pinnacle-odds.p.rapidapi.com{endpoint}";
 
-            _logger.LogInformation("Making request to: {Url}", fullUrl);
-
             var response = await _httpClient.GetAsync(fullUrl, cancellationToken);
-            _logger.LogInformation("Response Status: {StatusCode}", response.StatusCode);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -99,7 +57,6 @@ public class PinnacleScrapingService : IPinnacleScrapingService
             }
 
             var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogInformation("Response Content Length: {Length}", jsonContent.Length);
 
             var options = new JsonSerializerOptions
             {
@@ -115,20 +72,10 @@ public class PinnacleScrapingService : IPinnacleScrapingService
                 return new List<ScrapedEventDto>();
             }
 
-            _logger.LogInformation("Deserialized response. Events count: {Count}", pinnacleResponse.Events.Count);
-
             var cleanedBets = new List<ScrapedEventDto>();
-            var debugEventCount = 0;
 
             foreach (var eventData in pinnacleResponse.Events)
             {
-                debugEventCount++;
-
-                if (debugEventCount <= 5)
-                {
-                    LogEventDebugInfo(eventData, debugEventCount);
-                }
-
                 try
                 {
                     var moneyLine = eventData.Periods?.Num0?.MoneyLine;
@@ -139,21 +86,17 @@ public class PinnacleScrapingService : IPinnacleScrapingService
                         {
                             var dt = DateTime.Parse(eventData.Starts, null, DateTimeStyles.RoundtripKind);
 
-                            // 🔧 CORREÇÃO: Garantir que seja UTC
                             DateTime utcDateTime;
                             if (dt.Kind == DateTimeKind.Unspecified)
                             {
-                                // Se não especificado, assumir que é UTC (padrão da API)
                                 utcDateTime = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                             }
                             else if (dt.Kind == DateTimeKind.Local)
                             {
-                                // Se for local, converter para UTC
                                 utcDateTime = dt.ToUniversalTime();
                             }
                             else
                             {
-                                // Já é UTC
                                 utcDateTime = dt;
                             }
 
@@ -191,7 +134,6 @@ public class PinnacleScrapingService : IPinnacleScrapingService
         }
     }
 
-    // Classes auxiliares corrigidas para corresponder ao JSON real
     private class PinnacleApiResponse
     {
         [JsonPropertyName("events")]

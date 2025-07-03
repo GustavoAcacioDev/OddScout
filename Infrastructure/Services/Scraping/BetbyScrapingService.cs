@@ -42,9 +42,7 @@ public class BetbyScrapingService : IBetbyScrapingService
             await page.WaitForTimeoutAsync(5000);
 
             await page.WaitForSelectorAsync("body", new PageWaitForSelectorOptions { Timeout = 20000 });
-            _logger.LogInformation("Page loaded successfully");
 
-            // Obter o Shadow Root
             var shadowRoot = await GetShadowRootAsync(page, "#bt-inner-page");
             if (shadowRoot == null)
             {
@@ -59,10 +57,8 @@ public class BetbyScrapingService : IBetbyScrapingService
                 return new List<ScrapedEventDto>();
             }
 
-            // Dismiss modal se existir
             await DismissModalAsync(page);
 
-            // Calcular total de páginas
             await btRoot.WaitForSelectorAsync("[data-editor-id=\"eventCardPaginator\"]");
             var totalBets = await GetTotalBetsAsync(btRoot);
             var lastPage = (int)Math.Ceiling(totalBets / 24.0);
@@ -72,8 +68,6 @@ public class BetbyScrapingService : IBetbyScrapingService
 
             for (int currentPage = 1; currentPage <= lastPage; currentPage++)
             {
-                _logger.LogInformation("Scraping page {CurrentPage} of {LastPage}", currentPage, lastPage);
-
                 await btRoot.WaitForSelectorAsync("[data-editor-id=\"eventCard\"]");
                 var eventCards = await btRoot.QuerySelectorAllAsync("[data-editor-id=\"eventCard\"]");
 
@@ -147,9 +141,9 @@ public class BetbyScrapingService : IBetbyScrapingService
                 await dismissBtn.ClickAsync(new ElementHandleClickOptions { Force = true });
             }
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogDebug("No modal to dismiss or failed to dismiss: {Error}", ex.Message);
+            // Modal dismissal is optional, continue silently
         }
     }
 
@@ -216,34 +210,20 @@ public class BetbyScrapingService : IBetbyScrapingService
                     var dayIndicator = parts[0].Trim().ToLower();
                     var timeStr = parts[1].Trim();
 
-                    // 🔧 CORREÇÃO: Betby mostra horário local brasileiro, mas vamos converter para UTC
                     var brazilTimeZone = TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time");
-                    // Replace this line:
-                    // var localNow = TimeZoneInfo.ConvertFromUtc(DateTime.UtcNow, brazilTimeZone);
-
-                    // With this line:
                     var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, brazilTimeZone);
                     var todayDate = localNow.Date;
                     var eventDate = dayIndicator == "today" ? todayDate : todayDate.AddDays(1);
 
                     if (TimeSpan.TryParse(timeStr, out var eventTime))
                     {
-                        // Criar datetime local brasileiro
                         var localDateTime = eventDate.Add(eventTime);
-
-                        // 🔧 CONVERTER PARA UTC antes de salvar
                         var utcDateTime = TimeZoneInfo.ConvertTimeToUtc(localDateTime, brazilTimeZone);
-
                         dateTime = utcDateTime.ToString("yyyy-MM-dd, HH:mm");
-
-                        _logger.LogDebug("Converted Betby time: Local {Local} -> UTC {Utc}",
-                            localDateTime.ToString("yyyy-MM-dd HH:mm"),
-                            utcDateTime.ToString("yyyy-MM-dd HH:mm"));
                     }
                 }
             }
 
-            // Procurar pelas odds 1X2
             string? oddTeam1 = null, oddDraw = null, oddTeam2 = null;
 
             var i1x2Index = lines.FindIndex(line => line.Equals("1x2", StringComparison.OrdinalIgnoreCase));
@@ -276,33 +256,28 @@ public class BetbyScrapingService : IBetbyScrapingService
         }
     }
 
-    // NOVO MÉTODO: Converter odds para formato decimal
     private string ConvertOddToDecimal(string rawOdd)
     {
         try
         {
             if (string.IsNullOrEmpty(rawOdd)) return "0";
 
-            // Remover caracteres não numéricos
             var cleanOdd = Regex.Replace(rawOdd, @"[^\d]", "");
 
             if (int.TryParse(cleanOdd, out var intOdd) && intOdd > 0)
             {
                 string result;
 
-                // Se o número tem 3 dígitos (ex: 165), dividir por 100 (resultado: 1.65)
                 if (intOdd >= 100)
                 {
                     var decimalOdd = intOdd / 100.0;
                     result = decimalOdd.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
                 }
-                // Se o número tem 2 dígitos (ex: 35), dividir por 10 (resultado: 3.5)
                 else if (intOdd >= 10)
                 {
                     var decimalOdd = intOdd / 10.0;
                     result = decimalOdd.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
                 }
-                // Se o número tem 1 dígito, manter como está
                 else
                 {
                     result = intOdd.ToString();
@@ -311,12 +286,11 @@ public class BetbyScrapingService : IBetbyScrapingService
                 return result;
             }
 
-            _logger.LogWarning("❌ Could not parse odd: '{RawOdd}'", rawOdd);
             return rawOdd;
         }
         catch (Exception ex)
         {
-            _logger.LogError("❌ Error converting odd '{RawOdd}': {Error}", rawOdd, ex.Message);
+            _logger.LogError("Error converting odd '{RawOdd}': {Error}", rawOdd, ex.Message);
             return "0";
         }
     }
