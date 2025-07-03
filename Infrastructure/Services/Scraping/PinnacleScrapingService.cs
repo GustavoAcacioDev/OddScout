@@ -101,7 +101,6 @@ public class PinnacleScrapingService : IPinnacleScrapingService
             var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogInformation("Response Content Length: {Length}", jsonContent.Length);
 
-            // Usar configurações que correspondem ao formato real da API
             var options = new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -125,7 +124,6 @@ public class PinnacleScrapingService : IPinnacleScrapingService
             {
                 debugEventCount++;
 
-                // Debug detalhado dos primeiros 5 eventos
                 if (debugEventCount <= 5)
                 {
                     LogEventDebugInfo(eventData, debugEventCount);
@@ -137,17 +135,28 @@ public class PinnacleScrapingService : IPinnacleScrapingService
 
                     if (moneyLine != null && !string.IsNullOrEmpty(eventData.Starts))
                     {
-                        // Verificar se as odds existem
                         if (moneyLine.Home.HasValue || moneyLine.Draw.HasValue || moneyLine.Away.HasValue)
                         {
                             var dt = DateTime.Parse(eventData.Starts, null, DateTimeStyles.RoundtripKind);
 
+                            // 🔧 CORREÇÃO: Garantir que seja UTC
+                            DateTime utcDateTime;
                             if (dt.Kind == DateTimeKind.Unspecified)
                             {
-                                dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                                // Se não especificado, assumir que é UTC (padrão da API)
+                                utcDateTime = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                            }
+                            else if (dt.Kind == DateTimeKind.Local)
+                            {
+                                // Se for local, converter para UTC
+                                utcDateTime = dt.ToUniversalTime();
+                            }
+                            else
+                            {
+                                // Já é UTC
+                                utcDateTime = dt;
                             }
 
-                            var utcDateTime = dt.ToUniversalTime();
                             var formattedDateTime = utcDateTime.ToString("yyyy-MM-dd, HH:mm");
 
                             var scrapedEvent = new ScrapedEventDto
@@ -162,14 +171,6 @@ public class PinnacleScrapingService : IPinnacleScrapingService
                             };
 
                             cleanedBets.Add(scrapedEvent);
-
-                            // Log específico para o evento Udinese vs Hellas Verona
-                            if (eventData.Home?.Contains("Udinese") == true || eventData.Away?.Contains("Hellas") == true)
-                            {
-                                _logger.LogWarning("🎯 FOUND TARGET EVENT: {Home} vs {Away}", eventData.Home, eventData.Away);
-                                _logger.LogWarning("🎯 EXTRACTED ODDS: Home={Home}, Draw={Draw}, Away={Away}",
-                                    moneyLine.Home, moneyLine.Draw, moneyLine.Away);
-                            }
                         }
                     }
                 }

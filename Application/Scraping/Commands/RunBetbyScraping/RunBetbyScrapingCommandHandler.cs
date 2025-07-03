@@ -58,6 +58,8 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
                         continue;
                     }
 
+                    eventDateTime = DateTime.SpecifyKind(eventDateTime, DateTimeKind.Utc);
+
                     // 🔍 ADICIONAR ESTES LOGS DETALHADOS
                     _logger.LogInformation("🔍 PROCESSING SCRAPED EVENT:");
                     _logger.LogInformation("  - Team1: {Team1} vs Team2: {Team2}", scrapedEvent.Team1, scrapedEvent.Team2);
@@ -76,10 +78,6 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
                             scrapedEvent.OddTeam1, scrapedEvent.OddDraw, scrapedEvent.OddTeam2);
                         continue;
                     }
-
-                    // 🔍 VERIFICAR OS VALORES PARSEADOS
-                    _logger.LogInformation("✅ PARSED ODDS: Team1={T1}, Draw={D}, Team2={T2}",
-                        oddTeam1, oddDraw, oddTeam2);
 
                     // Criar evento
                     var eventEntity = new Event(

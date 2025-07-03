@@ -58,6 +58,8 @@ public class RunPinnacleScrapingCommandHandler : ICommandHandler<RunPinnacleScra
                         continue;
                     }
 
+                    eventDateTime = DateTime.SpecifyKind(eventDateTime, DateTimeKind.Utc);
+
                     // Parse das odds
                     if (!decimal.TryParse(scrapedEvent.OddTeam1, out var oddTeam1) ||
                         !decimal.TryParse(scrapedEvent.OddDraw, out var oddDraw) ||

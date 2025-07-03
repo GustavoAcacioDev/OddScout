@@ -26,19 +26,17 @@ public class ValueBetCalculationService : IValueBetCalculationService
     {
         try
         {
-            _logger.LogInformation("Starting value bet calculation...");
+            _logger.LogInformation("Starting value bet calculation (Python-accurate)...");
 
-            // Buscar eventos das duas fontes com suas odds
+            // 🔧 Load ALL events (no time filtering like Python)
             var betbyEvents = await _context.Events
                 .Include(e => e.Odds)
                 .Where(e => e.Source == OddsSource.Betby)
-                .Where(e => e.EventDateTime >= DateTime.UtcNow.AddHours(-2))
                 .ToListAsync(cancellationToken);
 
             var pinnacleEvents = await _context.Events
                 .Include(e => e.Odds)
                 .Where(e => e.Source == OddsSource.Pinnacle)
-                .Where(e => e.EventDateTime >= DateTime.UtcNow.AddHours(-2))
                 .ToListAsync(cancellationToken);
 
             _logger.LogInformation("Found {BetbyCount} Betby events and {PinnacleCount} Pinnacle events",
@@ -48,121 +46,118 @@ public class ValueBetCalculationService : IValueBetCalculationService
             var matchAttempts = 0;
             var successfulMatches = 0;
 
-            foreach (var betbyEvent in betbyEvents.Take(20)) // Processar mais eventos
+            // 🔧 EXACT Python logic: iterate through betby_data
+            foreach (var betbyEvent in betbyEvents)
             {
                 matchAttempts++;
 
                 var betbyOdds = betbyEvent.Odds.FirstOrDefault(o => o.MarketType == MarketType.Match1X2);
-                if (betbyOdds == null)
-                {
-                    _logger.LogDebug("Skipping Betby event {EventId} - No 1X2 odds found", betbyEvent.Id);
-                    continue;
-                }
+                if (betbyOdds == null) continue;
 
-                _logger.LogInformation("Processing Betby event {Count}: {Team1} vs {Team2} at {DateTime}",
+                _logger.LogDebug("Processing Betby event {Count}: {Team1} vs {Team2} at {DateTime}",
                     matchAttempts, betbyEvent.Team1, betbyEvent.Team2, betbyEvent.EventDateTime);
 
-                // Procurar match no Pinnacle
-                var pinnacleMatch = FindBestMatch(betbyEvent, pinnacleEvents);
+                // 🔧 Python matching logic
+                Event? bestMatch = null;
+                decimal bestAvgScore = 0;
+                const decimal teamSimilarityThreshold = 80m; // Exact Python value
 
-                if (pinnacleMatch == null)
+                // Normalize betby teams (Python style)
+                var normBetbyTeam1 = NormalizeStringPython(betbyEvent.Team1);
+                var normBetbyTeam2 = NormalizeStringPython(betbyEvent.Team2);
+                var betbyDateTime = FormatDateTimePython(betbyEvent.EventDateTime);
+
+                // 🔧 EXACT Python loop: iterate over pinnacle matches
+                foreach (var pinnacleEvent in pinnacleEvents)
                 {
-                    _logger.LogDebug("No match found for: {Team1} vs {Team2} at {DateTime}",
-                        betbyEvent.Team1, betbyEvent.Team2, betbyEvent.EventDateTime);
-                    continue;
-                }
+                    var pinnacleDateTime = FormatDateTimePython(pinnacleEvent.EventDateTime);
 
-                // Desempacotar a tupla corretamente
-                var (matchedEvent, confidenceScore) = pinnacleMatch.Value;
+                    // 🔧 EXACT datetime match requirement (Python: betby_datetime != pinnacle_datetime)
+                    if (betbyDateTime != pinnacleDateTime)
+                        continue;
 
-                successfulMatches++;
-                _logger.LogInformation("✅ Match found! Betby: {BTeam1} vs {BTeam2} <-> Pinnacle: {PTeam1} vs {PTeam2} (Score: {Score:F1}%)",
-                    betbyEvent.Team1, betbyEvent.Team2, matchedEvent.Team1, matchedEvent.Team2, confidenceScore);
+                    // Normalize pinnacle teams
+                    var normPinnacleTeam1 = NormalizeStringPython(pinnacleEvent.Team1);
+                    var normPinnacleTeam2 = NormalizeStringPython(pinnacleEvent.Team2);
 
-                var pinnacleOdds = matchedEvent.Odds.FirstOrDefault(o => o.MarketType == MarketType.Match1X2);
-                if (pinnacleOdds == null)
-                {
-                    _logger.LogWarning("Pinnacle match found but no 1X2 odds available");
-                    continue;
-                }
+                    // 🔧 Python fuzzy matching (approximating fuzz.token_set_ratio)
+                    var team1Score = CalculateTokenSetRatio(normBetbyTeam1, normPinnacleTeam1);
+                    var team2Score = CalculateTokenSetRatio(normBetbyTeam2, normPinnacleTeam2);
+                    var avgScore = (team1Score + team2Score) / 2;
 
-                // Calcular probabilidades implícitas baseadas no Pinnacle
-                var pinnacleOddsArray = new decimal[]
-                {
-                    pinnacleOdds.Team1Odd,
-                    pinnacleOdds.DrawOdd,
-                    pinnacleOdds.Team2Odd
-                };
+                    _logger.LogDebug("Team similarity: B({BT1}|{BT2}) vs P({PT1}|{PT2}) = {T1Score:F1}%/{T2Score:F1}% = {AvgScore:F1}%",
+                        normBetbyTeam1, normBetbyTeam2, normPinnacleTeam1, normPinnacleTeam2, team1Score, team2Score, avgScore);
 
-                var impliedProbs = CalculateImpliedProbabilities(pinnacleOddsArray);
-
-                // Calcular EV para cada outcome
-                var evTeam1 = CalculateExpectedValue(impliedProbs[0], betbyOdds.Team1Odd);
-                var evDraw = CalculateExpectedValue(impliedProbs[1], betbyOdds.DrawOdd);
-                var evTeam2 = CalculateExpectedValue(impliedProbs[2], betbyOdds.Team2Odd);
-
-                var outcomes = new[]
-                {
-                    new { EV = evTeam1, Outcome = OutcomeType.Team1Win, BetbyOdd = betbyOdds.Team1Odd, PinnacleOdd = pinnacleOdds.Team1Odd, Prob = impliedProbs[0] },
-                    new { EV = evDraw, Outcome = OutcomeType.Draw, BetbyOdd = betbyOdds.DrawOdd, PinnacleOdd = pinnacleOdds.DrawOdd, Prob = impliedProbs[1] },
-                    new { EV = evTeam2, Outcome = OutcomeType.Team2Win, BetbyOdd = betbyOdds.Team2Odd, PinnacleOdd = pinnacleOdds.Team2Odd, Prob = impliedProbs[2] }
-                };
-
-                var bestOutcome = outcomes.OrderByDescending(o => o.EV).First();
-
-                // Threshold de 1% para value bets
-                if (bestOutcome.EV >= 0.01m)
-                {
-                    _logger.LogInformation("🎯 VALUE BET FOUND! EV={EV:F4} for {Outcome}", bestOutcome.EV, bestOutcome.Outcome);
-
-                    // Salvar no banco de dados
-                    var valueBet = new ValueBet(
-                        betbyEvent.Id,
-                        MarketType.Match1X2,
-                        bestOutcome.Outcome,
-                        bestOutcome.BetbyOdd,
-                        bestOutcome.PinnacleOdd,
-                        bestOutcome.Prob,
-                        bestOutcome.EV,
-                        confidenceScore
-                    );
-
-                    _context.ValueBets.Add(valueBet);
-
-                    // Adicionar ao resultado
-                    valueBets.Add(new ValueBetDto
+                    // 🔧 EXACT Python condition
+                    if (team1Score >= teamSimilarityThreshold && team2Score >= teamSimilarityThreshold)
                     {
-                        Id = valueBet.Id,
-                        League = betbyEvent.League,
-                        EventDateTime = betbyEvent.EventDateTime,
-                        Team1 = betbyEvent.Team1,
-                        Team2 = betbyEvent.Team2,
-                        Link = betbyEvent.ExternalLink,
-                        BestOutcome = bestOutcome.Outcome,
-                        BetbyOdd = bestOutcome.BetbyOdd,
-                        PinnacleOdd = bestOutcome.PinnacleOdd,
-                        ImpliedProbability = bestOutcome.Prob,
-                        ExpectedValue = bestOutcome.EV,
-                        ConfidenceScore = confidenceScore,
-                        CalculatedAt = valueBet.CalculatedAt
-                    });
+                        if (avgScore > bestAvgScore)
+                        {
+                            bestAvgScore = avgScore;
+                            bestMatch = pinnacleEvent;
+                        }
+                    }
+                }
+
+                // 🔧 If match found, calculate EV (Python style)
+                if (bestMatch != null)
+                {
+                    successfulMatches++;
+                    _logger.LogInformation("✅ Match found! Betby: {BTeam1} vs {BTeam2} <-> Pinnacle: {PTeam1} vs {PTeam2} (Score: {Score:F1}%)",
+                        betbyEvent.Team1, betbyEvent.Team2, bestMatch.Team1, bestMatch.Team2, bestAvgScore);
+
+                    var pinnacleOdds = bestMatch.Odds.FirstOrDefault(o => o.MarketType == MarketType.Match1X2);
+                    if (pinnacleOdds == null) continue;
+
+                    try
+                    {
+                        // 🔧 Python EV calculation
+                        var (valueBet, maxEv) = CalculateEVPythonStyle(
+                            betbyEvent, betbyOdds, pinnacleOdds, bestAvgScore);
+
+                        // 🔧 EXACT Python filter: max_ev >= 0.01
+                        if (maxEv >= 0.01m)
+                        {
+                            _logger.LogInformation("🎯 VALUE BET FOUND! Max EV={EV:F6}", maxEv);
+
+                            _context.ValueBets.Add(valueBet);
+                            valueBets.Add(new ValueBetDto
+                            {
+                                Id = valueBet.Id,
+                                League = betbyEvent.League,
+                                EventDateTime = betbyEvent.EventDateTime,
+                                Team1 = betbyEvent.Team1,
+                                Team2 = betbyEvent.Team2,
+                                Link = betbyEvent.ExternalLink,
+                                BestOutcome = valueBet.OutcomeType,
+                                BetbyOdd = valueBet.BetbyOdd,
+                                PinnacleOdd = valueBet.PinnacleOdd,
+                                ImpliedProbability = valueBet.ImpliedProbability,
+                                ExpectedValue = valueBet.ExpectedValue,
+                                ConfidenceScore = valueBet.ConfidenceScore,
+                                CalculatedAt = valueBet.CalculatedAt
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Skipping match due to invalid odds: {Error}", ex.Message);
+                    }
                 }
             }
 
             _logger.LogInformation("Match Summary: {Attempts} attempts, {Successful} successful matches, {ValueBets} value bets found",
                 matchAttempts, successfulMatches, valueBets.Count);
 
-            // Limpar value bets antigos antes de salvar os novos
+            // Clean old value bets
             var oldValueBets = await _context.ValueBets
-                .Where(vb => vb.CalculatedAt < DateTime.UtcNow.AddHours(-2))
+                .Where(vb => vb.CalculatedAt < DateTime.UtcNow.AddHours(-24))
                 .ToListAsync(cancellationToken);
-
             _context.ValueBets.RemoveRange(oldValueBets);
 
-            // Salvar mudanças
             await _context.SaveChangesAsync(cancellationToken);
 
-            // Ordenar por EV decrescente
+            // Sort by Max EV descending (Python: matched_results.sort(key=lambda x: x['Max EV'], reverse=True))
             valueBets = valueBets.OrderByDescending(vb => vb.ExpectedValue).ToList();
 
             _logger.LogInformation("Value bet calculation completed. Found {Count} value bets", valueBets.Count);
@@ -175,160 +170,141 @@ public class ValueBetCalculationService : IValueBetCalculationService
         }
     }
 
-    public decimal CalculateExpectedValue(decimal probability, decimal odd)
+    // 🔧 EXACT Python normalize_string function
+    private string NormalizeStringPython(string s)
     {
-        var gain = odd - 1;
-        var loss = 1m;
-        return (probability * gain) - ((1 - probability) * loss);
-    }
+        if (string.IsNullOrEmpty(s)) return "";
 
-    public decimal[] CalculateImpliedProbabilities(decimal[] odds)
-    {
-        var impliedProbs = odds.Select(odd => 1m / odd).ToArray();
-        var total = impliedProbs.Sum();
-        return impliedProbs.Select(prob => prob / total).ToArray();
-    }
+        // Python: unicodedata.normalize('NFKD', s)
+        var normalized = s.Normalize(NormalizationForm.FormKD);
 
-    private (Event match, decimal confidenceScore)? FindBestMatch(Event betbyEvent, List<Event> pinnacleEvents)
-    {
-        Event? bestMatch = null;
-        decimal bestScore = 0;
+        // Python: s.encode('ascii', 'ignore').decode('utf-8')
+        var asciiBytes = Encoding.ASCII.GetBytes(normalized);
+        var asciiString = Encoding.ASCII.GetString(asciiBytes);
 
-        // Threshold rigoroso para evitar matches falsos
-        const decimal minThreshold = 75m;
+        // Python: common_words = {'fc', 'cf', 'club', 'united', 'city', 'town', 'athletic', 'sport', 'association', 'al'}
+        var commonWords = new HashSet<string> { "fc", "cf", "club", "united", "city", "town", "athletic", "sport", "association", "al" };
 
-        var candidatesInTimeWindow = pinnacleEvents
-            .Where(p => AreDateTimesEqual(betbyEvent.EventDateTime, p.EventDateTime))
-            .Where(p => AreLeaguesSimilar(betbyEvent.League, p.League))
-            .ToList();
+        // Python: re.sub(r'[^a-zA-Z0-9 ]', '', s.lower())
+        var cleaned = Regex.Replace(asciiString.ToLower(), @"[^a-zA-Z0-9 ]", "");
 
-        foreach (var pinnacleEvent in candidatesInTimeWindow)
-        {
-            // Calcular similaridade dos times
-            var team1Score = CalculateStringSimilarity(betbyEvent.Team1, pinnacleEvent.Team1);
-            var team2Score = CalculateStringSimilarity(betbyEvent.Team2, pinnacleEvent.Team2);
-
-            // Ambos os times devem ter similaridade mínima de 60%
-            if (team1Score < 60m || team2Score < 60m)
-                continue;
-
-            var avgScore = (team1Score + team2Score) / 2;
-
-            if (avgScore >= minThreshold && avgScore > bestScore)
-            {
-                bestScore = avgScore;
-                bestMatch = pinnacleEvent;
-            }
-        }
-
-        return bestMatch != null ? (bestMatch, bestScore) : null;
-    }
-
-    private bool AreDateTimesEqual(DateTime dt1, DateTime dt2)
-    {
-        // Converter ambos para UTC para comparação
-        var utc1 = dt1.Kind == DateTimeKind.Utc ? dt1 : dt1.ToUniversalTime();
-        var utc2 = dt2.Kind == DateTimeKind.Utc ? dt2 : dt2.ToUniversalTime();
-
-        // Verificar se são do mesmo dia
-        if (utc1.Date != utc2.Date)
-            return false;
-
-        // Tolerância de 4 horas para problemas de timezone
-        var differenceHours = Math.Abs((utc1 - utc2).TotalHours);
-        return differenceHours <= 4;
-    }
-
-    private bool AreLeaguesSimilar(string league1, string league2)
-    {
-        var normalized1 = league1.ToLowerInvariant();
-        var normalized2 = league2.ToLowerInvariant();
-
-        // Se uma é da Argentina e outra da Estonia, claramente diferentes
-        var country1 = ExtractCountry(normalized1);
-        var country2 = ExtractCountry(normalized2);
-
-        return country1 == country2 || string.IsNullOrEmpty(country1) || string.IsNullOrEmpty(country2);
-    }
-
-    private string ExtractCountry(string league)
-    {
-        var countries = new[] { "argentina", "brazil", "italy", "england", "spain", "germany", "france", "estonia", "ireland", "usa", "australia", "china" };
-        return countries.FirstOrDefault(country => league.Contains(country)) ?? "";
-    }
-
-    private decimal CalculateStringSimilarity(string s1, string s2)
-    {
-        var normalized1 = NormalizeString(s1);
-        var normalized2 = NormalizeString(s2);
-
-        if (normalized1 == normalized2) return 100;
-
-        var distance = LevenshteinDistance(normalized1, normalized2);
-        var maxLength = Math.Max(normalized1.Length, normalized2.Length);
-
-        if (maxLength == 0) return 100;
-
-        return Math.Max(0, 100 - (decimal)(distance * 100) / maxLength);
-    }
-
-    private string NormalizeString(string input)
-    {
-        if (string.IsNullOrEmpty(input)) return "";
-
-        // Remove acentos
-        var normalized = input.Normalize(NormalizationForm.FormKD);
-        var stringBuilder = new StringBuilder();
-
-        foreach (var c in normalized)
-        {
-            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != UnicodeCategory.NonSpacingMark)
-            {
-                stringBuilder.Append(c);
-            }
-        }
-
-        var result = stringBuilder.ToString().Normalize(NormalizationForm.FormC);
-        result = Regex.Replace(result, @"[^a-zA-Z0-9\s]", "").ToLowerInvariant();
-
-        var commonWords = new[] {
-            "fc", "cf", "club", "united", "city", "town", "athletic", "sport", "association", "al",
-            "de", "vs", "v", "and", "&", "sc", "ac", "real", "cd", "ca", "rc",
-            "football", "soccer", "futbol", "ii", "2", "u23", "u21", "reserves", "b", "youth"
-        };
-
-        var words = result.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                          .Where(word => !commonWords.Contains(word) && word.Length > 1)
+        // Python: words = s.split() + filter common words
+        var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          .Where(word => !commonWords.Contains(word))
                           .ToArray();
 
         return string.Join(" ", words);
     }
 
-    private int LevenshteinDistance(string s1, string s2)
+    // 🔧 Format DateTime to match Python string format
+    private string FormatDateTimePython(DateTime dateTime)
     {
-        if (string.IsNullOrEmpty(s1)) return s2?.Length ?? 0;
-        if (string.IsNullOrEmpty(s2)) return s1.Length;
+        // Ensure UTC and format consistently
+        var utc = dateTime.Kind == DateTimeKind.Utc ? dateTime : dateTime.ToUniversalTime();
+        return utc.ToString("yyyy-MM-dd, HH:mm");
+    }
 
-        var matrix = new int[s1.Length + 1, s2.Length + 1];
+    // 🔧 Approximate Python's fuzz.token_set_ratio
+    private decimal CalculateTokenSetRatio(string s1, string s2)
+    {
+        if (string.IsNullOrEmpty(s1) && string.IsNullOrEmpty(s2)) return 100m;
+        if (string.IsNullOrEmpty(s1) || string.IsNullOrEmpty(s2)) return 0m;
 
-        for (int i = 0; i <= s1.Length; i++)
-            matrix[i, 0] = i;
+        // Token set approach: split into words and compare sets
+        var tokens1 = s1.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var tokens2 = s2.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 
-        for (int j = 0; j <= s2.Length; j++)
-            matrix[0, j] = j;
+        if (tokens1.Count == 0 && tokens2.Count == 0) return 100m;
+        if (tokens1.Count == 0 || tokens2.Count == 0) return 0m;
 
-        for (int i = 1; i <= s1.Length; i++)
+        // Calculate Jaccard similarity (intersection over union)
+        var intersection = tokens1.Intersect(tokens2).Count();
+        var union = tokens1.Union(tokens2).Count();
+
+        var similarity = union > 0 ? (decimal)intersection / union : 0m;
+        return similarity * 100m;
+    }
+
+    // 🔧 Python-style EV calculation
+    private (ValueBet valueBet, decimal maxEv) CalculateEVPythonStyle(
+        Event betbyEvent, Odd betbyOdds, Odd pinnacleOdds, decimal confidenceScore)
+    {
+        // Python: odds = [pinnacle_odd_team1, pinnacle_odd_draw, pinnacle_odd_team2]
+        var pinnacleOddsArray = new decimal[] { pinnacleOdds.Team1Odd, pinnacleOdds.DrawOdd, pinnacleOdds.Team2Odd };
+
+        // 🔧 Python: implied_probs = goto_conversion.goto_conversion(odds)
+        // Since we don't have the exact goto_conversion function, use raw probabilities (no normalization)
+        var impliedProbs = pinnacleOddsArray.Select(odd => 1m / odd).ToArray();
+
+        // Python: calculate_ev for each outcome
+        var evTeam1 = CalculateEVPython(impliedProbs[0], betbyOdds.Team1Odd - 1, 1);
+        var evDraw = CalculateEVPython(impliedProbs[1], betbyOdds.DrawOdd - 1, 1);
+        var evTeam2 = CalculateEVPython(impliedProbs[2], betbyOdds.Team2Odd - 1, 1);
+
+        // Python: max_ev = max(ev_team1, ev_draw, ev_team2)
+        var maxEv = Math.Max(Math.Max(evTeam1, evDraw), evTeam2);
+
+        // Determine best outcome
+        OutcomeType bestOutcome;
+        decimal bestEv;
+        decimal bestBetbyOdd;
+        decimal bestPinnacleOdd;
+        decimal bestImpliedProb;
+
+        if (evTeam1 == maxEv)
         {
-            for (int j = 1; j <= s2.Length; j++)
-            {
-                var cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-                matrix[i, j] = Math.Min(
-                    Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-                    matrix[i - 1, j - 1] + cost);
-            }
+            bestOutcome = OutcomeType.Team1Win;
+            bestEv = evTeam1;
+            bestBetbyOdd = betbyOdds.Team1Odd;
+            bestPinnacleOdd = pinnacleOdds.Team1Odd;
+            bestImpliedProb = impliedProbs[0];
+        }
+        else if (evDraw == maxEv)
+        {
+            bestOutcome = OutcomeType.Draw;
+            bestEv = evDraw;
+            bestBetbyOdd = betbyOdds.DrawOdd;
+            bestPinnacleOdd = pinnacleOdds.DrawOdd;
+            bestImpliedProb = impliedProbs[1];
+        }
+        else
+        {
+            bestOutcome = OutcomeType.Team2Win;
+            bestEv = evTeam2;
+            bestBetbyOdd = betbyOdds.Team2Odd;
+            bestPinnacleOdd = pinnacleOdds.Team2Odd;
+            bestImpliedProb = impliedProbs[2];
         }
 
-        return matrix[s1.Length, s2.Length];
+        var valueBet = new ValueBet(
+            betbyEvent.Id,
+            MarketType.Match1X2,
+            bestOutcome,
+            bestBetbyOdd,
+            bestPinnacleOdd,
+            bestImpliedProb,
+            bestEv,
+            confidenceScore
+        );
+
+        return (valueBet, maxEv);
+    }
+
+    // 🔧 EXACT Python calculate_ev function
+    private decimal CalculateEVPython(decimal prob, decimal gain, decimal loss)
+    {
+        // Python: return (prob * gain) - ((1 - prob) * loss)
+        return (prob * gain) - ((1 - prob) * loss);
+    }
+
+    // Keep the interface methods for compatibility
+    public decimal CalculateExpectedValue(decimal probability, decimal odd)
+    {
+        return CalculateEVPython(probability, odd - 1, 1);
+    }
+
+    public decimal[] CalculateImpliedProbabilities(decimal[] odds)
+    {
+        return odds.Select(odd => 1m / odd).ToArray();
     }
 }

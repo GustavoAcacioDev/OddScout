@@ -216,21 +216,33 @@ public class BetbyScrapingService : IBetbyScrapingService
                     var dayIndicator = parts[0].Trim().ToLower();
                     var timeStr = parts[1].Trim();
 
-                    // 🔧 CORREÇÃO: Usar UTC ao invés de DateTime.Today local
-                    var todayDate = DateTime.UtcNow.Date;
+                    // 🔧 CORREÇÃO: Betby mostra horário local brasileiro, mas vamos converter para UTC
+                    var brazilTimeZone = TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time");
+                    // Replace this line:
+                    // var localNow = TimeZoneInfo.ConvertFromUtc(DateTime.UtcNow, brazilTimeZone);
+
+                    // With this line:
+                    var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, brazilTimeZone);
+                    var todayDate = localNow.Date;
                     var eventDate = dayIndicator == "today" ? todayDate : todayDate.AddDays(1);
 
                     if (TimeSpan.TryParse(timeStr, out var eventTime))
                     {
-                        var eventDateTime = eventDate.Add(eventTime);
+                        // Criar datetime local brasileiro
+                        var localDateTime = eventDate.Add(eventTime);
 
-                        // 🔧 GARANTIR QUE É UTC
-                        eventDateTime = DateTime.SpecifyKind(eventDateTime, DateTimeKind.Utc);
+                        // 🔧 CONVERTER PARA UTC antes de salvar
+                        var utcDateTime = TimeZoneInfo.ConvertTimeToUtc(localDateTime, brazilTimeZone);
 
-                        dateTime = eventDateTime.ToString("yyyy-MM-dd, HH:mm");
+                        dateTime = utcDateTime.ToString("yyyy-MM-dd, HH:mm");
+
+                        _logger.LogDebug("Converted Betby time: Local {Local} -> UTC {Utc}",
+                            localDateTime.ToString("yyyy-MM-dd HH:mm"),
+                            utcDateTime.ToString("yyyy-MM-dd HH:mm"));
                     }
                 }
             }
+
             // Procurar pelas odds 1X2
             string? oddTeam1 = null, oddDraw = null, oddTeam2 = null;
 
@@ -241,16 +253,9 @@ public class BetbyScrapingService : IBetbyScrapingService
                 var rawOddDraw = lines[i1x2Index + 4];
                 var rawOddTeam2 = lines[i1x2Index + 6];
 
-                _logger.LogInformation("🎯 RAW ODDS FOUND: Team1='{T1}', Draw='{D}', Team2='{T2}'",
-                    rawOddTeam1, rawOddDraw, rawOddTeam2);
-
-                // CORREÇÃO: Converter odds para formato decimal
                 oddTeam1 = ConvertOddToDecimal(rawOddTeam1);
                 oddDraw = ConvertOddToDecimal(rawOddDraw);
                 oddTeam2 = ConvertOddToDecimal(rawOddTeam2);
-
-                _logger.LogInformation("✅ CONVERTED ODDS: Team1='{T1}', Draw='{D}', Team2='{T2}'",
-                    oddTeam1, oddDraw, oddTeam2);
             }
 
             return new ScrapedEventDto
@@ -276,8 +281,6 @@ public class BetbyScrapingService : IBetbyScrapingService
     {
         try
         {
-            _logger.LogInformation("🔄 Converting odd: '{RawOdd}'", rawOdd);
-
             if (string.IsNullOrEmpty(rawOdd)) return "0";
 
             // Remover caracteres não numéricos
@@ -305,7 +308,6 @@ public class BetbyScrapingService : IBetbyScrapingService
                     result = intOdd.ToString();
                 }
 
-                _logger.LogInformation("✅ Converted '{RawOdd}' -> '{Result}'", rawOdd, result);
                 return result;
             }
 
