@@ -9,6 +9,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
     public DbSet<User> Users { get; set; } = null!;
+    public DbSet<Event> Events { get; set; } = null!;
+    public DbSet<Odd> Odds { get; set; } = null!;
+    public DbSet<ValueBet> ValueBets { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

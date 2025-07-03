@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OddScout.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using OddScout.Infrastructure.Data;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250703120055_Scraping_entities")]
+    partial class Scraping_entities
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -185,16 +188,16 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<decimal>("ConfidenceScore")
-                        .HasColumnType("decimal(8,4)");
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<Guid>("EventId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<decimal>("ExpectedValue")
-                        .HasColumnType("decimal(12,8)");
+                        .HasColumnType("decimal(8,6)");
 
                     b.Property<decimal>("ImpliedProbability")
-                        .HasColumnType("decimal(12,8)");
+                        .HasColumnType("decimal(8,6)");
 
                     b.Property<int>("MarketType")
                         .HasColumnType("int");
