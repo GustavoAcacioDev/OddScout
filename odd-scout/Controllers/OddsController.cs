@@ -6,7 +6,7 @@ using OddScout.Domain.Enums;
 
 namespace OddScout.API.Controllers;
 
-[AllowAnonymous]
+[Authorize]
 public class OddsController : BaseController
 {
     private readonly IApplicationDbContext _context;

@@ -7,7 +7,7 @@ using OddScout.Application.Scraping.Queries.GetValueBets;
 
 namespace OddScout.API.Controllers;
 
-[AllowAnonymous]
+[Authorize]
 public class ScrapingController : BaseController
 {
     [HttpPost("pinnacle/run")]

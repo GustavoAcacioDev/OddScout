@@ -22,22 +22,27 @@ public class JwtService : IJwtService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+        // CORRIGIDO: Usar claims que funcionam com [Authorize]
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, email),
-            new Claim(JwtRegisteredClaimNames.Name, name),
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()), // MUDADO: Usar ClaimTypes.NameIdentifier
+            new Claim(ClaimTypes.Email, email),                      // MUDADO: Usar ClaimTypes.Email
+            new Claim(ClaimTypes.Name, name),                        // MUDADO: Usar ClaimTypes.Name
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Iat,
                 DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(),
-                ClaimValueTypes.Integer64)
+                ClaimValueTypes.Integer64),
+            // Adicionar claim para facilitar debugging
+            new Claim("user_id", userId.ToString())
         };
+
+        var tokenExpiry = DateTime.UtcNow.AddMinutes(int.Parse(_configuration["Jwt:AccessTokenExpirationMinutes"]!));
 
         var token = new JwtSecurityToken(
             issuer: _configuration["Jwt:Issuer"],
             audience: _configuration["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(int.Parse(_configuration["Jwt:AccessTokenExpirationMinutes"]!)),
+            expires: tokenExpiry,
             signingCredentials: credentials
         );
 

@@ -4,7 +4,7 @@ using OddScout.Application.Common.Interfaces;
 
 namespace OddScout.API.Controllers;
 
-[AllowAnonymous]
+[Authorize]
 public class GotoConversionController : BaseController
 {
     private readonly IGotoConversionService _gotoConversionService;

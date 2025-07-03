@@ -57,11 +57,12 @@ builder.Services.AddApplication();
 // Add Infrastructure Layer (DbContext, Services)
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Add JWT Authentication
+// Add JWT Authentication - CORRIGIDO
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
 })
 .AddJwtBearer(options =>
 {
@@ -72,12 +73,38 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidAudience = builder.Configuration["Jwt:Audience"],
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+        ValidateLifetime = true, // IMPORTANTE: Validar expiração
+        ClockSkew = TimeSpan.FromMinutes(5), // Tolerância de 5 minutos para diferenças de relógio
+        RequireExpirationTime = true,
+        // Mapear claims corretamente
+        NameClaimType = "name",
+        RoleClaimType = "role"
     };
 
     options.RequireHttpsMetadata = false; // Set to true in production
-    options.SaveToken = false;
-    options.IncludeErrorDetails = false;
+    options.SaveToken = true; // MUDADO: Salvar token para debugging
+    options.IncludeErrorDetails = true; // MUDADO: Incluir detalhes de erro para debugging
+
+    // Event handlers para debugging
+    options.Events = new JwtBearerEvents
+    {
+        OnAuthenticationFailed = context =>
+        {
+            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+            return Task.CompletedTask;
+        },
+        OnTokenValidated = context =>
+        {
+            Console.WriteLine($"Token validated for: {context.Principal?.Identity?.Name}");
+            return Task.CompletedTask;
+        },
+        OnChallenge = context =>
+        {
+            Console.WriteLine($"OnChallenge error: {context.Error}, {context.ErrorDescription}");
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
@@ -110,7 +137,8 @@ app.UseHttpsRedirection();
 
 app.UseCors("AllowAll");
 
-app.UseAuthentication();
+// IMPORTANTE: Ordem correta do pipeline
+app.UseAuthentication(); // DEVE vir antes de UseAuthorization
 app.UseAuthorization();
 
 app.UseExceptionHandler();
