@@ -11,15 +11,18 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
 {
     private readonly IApplicationDbContext _context;
     private readonly IBetbyScrapingService _betbyScrapingService;
+    private readonly IEventManagementService _eventManagementService;
     private readonly ILogger<RunBetbyScrapingCommandHandler> _logger;
 
     public RunBetbyScrapingCommandHandler(
         IApplicationDbContext context,
         IBetbyScrapingService betbyScrapingService,
+        IEventManagementService eventManagementService,
         ILogger<RunBetbyScrapingCommandHandler> logger)
     {
         _context = context;
         _betbyScrapingService = betbyScrapingService;
+        _eventManagementService = eventManagementService;
         _logger = logger;
     }
 
@@ -37,11 +40,8 @@ public class RunBetbyScrapingCommandHandler : ICommandHandler<RunBetbyScrapingCo
                 return 0;
             }
 
-            var oldBetbyEvents = await _context.Events
-                .Where(e => e.Source == OddsSource.Betby)
-                .ToListAsync(cancellationToken);
-
-            _context.Events.RemoveRange(oldBetbyEvents);
+            // CORREÇÃO: Usar o serviço de limpeza em vez de deletar diretamente
+            await _eventManagementService.CleanupEventsForScrapingAsync(OddsSource.Betby, cancellationToken);
 
             var savedCount = 0;
 
