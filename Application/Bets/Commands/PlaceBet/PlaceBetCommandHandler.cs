@@ -9,10 +9,12 @@ namespace OddScout.Application.Bets.Commands.PlaceBet;
 public class PlaceBetCommandHandler : ICommandHandler<PlaceBetCommand, BetDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly IEventManagementService _eventManagementService;
 
-    public PlaceBetCommandHandler(IApplicationDbContext context)
+    public PlaceBetCommandHandler(IApplicationDbContext context, IEventManagementService eventManagementService)
     {
         _context = context;
+        _eventManagementService = eventManagementService;
     }
 
     public async Task<BetDto> Handle(PlaceBetCommand request, CancellationToken cancellationToken)
@@ -34,7 +36,7 @@ public class PlaceBetCommandHandler : ICommandHandler<PlaceBetCommand, BetDto>
         if (eventEntity is null)
             throw new InvalidOperationException("Event not found");
 
-        if (eventEntity.EventDateTime <= DateTime.UtcNow.AddHours(-2)) // Allow 2 hours grace period
+        if (eventEntity.EventDateTime <= DateTime.UtcNow.AddHours(-2))
             throw new InvalidOperationException("Cannot bet on past events");
 
         if (eventEntity.Status == EventStatus.Finished || eventEntity.Status == EventStatus.Cancelled)
@@ -50,12 +52,30 @@ public class PlaceBetCommandHandler : ICommandHandler<PlaceBetCommand, BetDto>
             request.Odds
         );
 
+        // Create transaction for bet
+        var transaction = new Transaction(
+            request.UserId,
+            TransactionType.BetPlaced,
+            request.Amount,
+            user.Balance,
+            $"Bet placed on {eventEntity.Team1} vs {eventEntity.Team2}",
+            null,
+            bet.Id
+        );
+
         // Update user balance
         user.UpdateBalance(user.Balance - request.Amount);
 
-        // Save bet
+        // Complete transaction
+        transaction.CompleteTransaction();
+
+        // Save everything
         _context.Bets.Add(bet);
+        _context.Transactions.Add(transaction);
         await _context.SaveChangesAsync(cancellationToken);
+
+        // NOVA: Marcar evento como tendo apostas (sem esperar)
+        _ = Task.Run(async () => await _eventManagementService.MarkEventAsHavingBetsAsync(request.EventId));
 
         // Return DTO
         return new BetDto

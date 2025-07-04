@@ -11,15 +11,18 @@ public class RunPinnacleScrapingCommandHandler : ICommandHandler<RunPinnacleScra
 {
     private readonly IApplicationDbContext _context;
     private readonly IPinnacleScrapingService _pinnacleScrapingService;
+    private readonly IEventManagementService _eventManagementService;
     private readonly ILogger<RunPinnacleScrapingCommandHandler> _logger;
 
     public RunPinnacleScrapingCommandHandler(
         IApplicationDbContext context,
         IPinnacleScrapingService pinnacleScrapingService,
+        IEventManagementService eventManagementService,
         ILogger<RunPinnacleScrapingCommandHandler> logger)
     {
         _context = context;
         _pinnacleScrapingService = pinnacleScrapingService;
+        _eventManagementService = eventManagementService;
         _logger = logger;
     }
 
@@ -38,12 +41,8 @@ public class RunPinnacleScrapingCommandHandler : ICommandHandler<RunPinnacleScra
                 return 0;
             }
 
-            // Limpar eventos antigos do Pinnacle
-            var oldPinnacleEvents = await _context.Events
-                .Where(e => e.Source == OddsSource.Pinnacle)
-                .ToListAsync(cancellationToken);
-
-            _context.Events.RemoveRange(oldPinnacleEvents);
+            // MUDANÇA: Usar o serviço de limpeza em vez de deletar diretamente
+            await _eventManagementService.CleanupEventsForScrapingAsync(OddsSource.Pinnacle, cancellationToken);
 
             var savedCount = 0;
 

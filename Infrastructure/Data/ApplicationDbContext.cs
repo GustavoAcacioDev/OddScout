@@ -12,7 +12,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Event> Events { get; set; } = null!;
     public DbSet<Odd> Odds { get; set; } = null!;
     public DbSet<ValueBet> ValueBets { get; set; } = null!;
-    public DbSet<Bet> Bets { get; set; } = null!; // Nova adição
+    public DbSet<Bet> Bets { get; set; } = null!;
+    public DbSet<Transaction> Transactions { get; set; } = null!; // Nova adição
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -22,7 +23,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        // Here you can dispatch domain events if needed in the future
         return await base.SaveChangesAsync(cancellationToken);
     }
 }

@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IGotoConversionService, GotoConversionService>();
+        services.AddScoped<IEventManagementService, EventManagementService>(); // ESSA LINHA É CRÍTICA
 
         // Scraping Services
         services.AddHttpClient<IPinnacleScrapingService, PinnacleScrapingService>(client =>

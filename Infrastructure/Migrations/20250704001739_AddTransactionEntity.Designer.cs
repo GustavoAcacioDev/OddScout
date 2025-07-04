@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OddScout.Infrastructure.Data;
 
@@ -11,9 +12,11 @@ using OddScout.Infrastructure.Data;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250704001739_AddTransactionEntity")]
+    partial class AddTransactionEntity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -87,25 +90,12 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTime?>("ArchivedAt")
-                        .HasColumnType("datetime2");
-
                     b.Property<DateTime>("EventDateTime")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ExternalLink")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
-
-                    b.Property<bool>("HasBets")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(true);
 
                     b.Property<string>("League")
                         .IsRequired()
@@ -138,17 +128,8 @@ namespace Infrastructure.Migrations
                     b.HasIndex("EventDateTime")
                         .HasDatabaseName("IX_Events_EventDateTime");
 
-                    b.HasIndex("HasBets")
-                        .HasDatabaseName("IX_Events_HasBets");
-
-                    b.HasIndex("IsActive")
-                        .HasDatabaseName("IX_Events_IsActive");
-
                     b.HasIndex("Source")
                         .HasDatabaseName("IX_Events_Source");
-
-                    b.HasIndex("IsActive", "Source")
-                        .HasDatabaseName("IX_Events_Active_Source");
 
                     b.HasIndex("Team1", "Team2", "EventDateTime")
                         .HasDatabaseName("IX_Events_Teams_DateTime");
@@ -377,7 +358,7 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("OddScout.Domain.Entities.Bet", b =>
                 {
                     b.HasOne("OddScout.Domain.Entities.Event", "Event")
-                        .WithMany("Bets")
+                        .WithMany()
                         .HasForeignKey("EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -428,8 +409,6 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("OddScout.Domain.Entities.Event", b =>
                 {
-                    b.Navigation("Bets");
-
                     b.Navigation("Odds");
                 });
 #pragma warning restore 612, 618

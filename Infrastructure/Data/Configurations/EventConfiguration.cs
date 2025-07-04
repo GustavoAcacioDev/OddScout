@@ -43,7 +43,24 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
         builder.Property(e => e.ScrapedAt)
             .IsRequired();
 
-        // Índices para performance
+        // NOVOS CAMPOS
+        builder.Property(e => e.IsActive)
+            .HasDefaultValue(true)
+            .IsRequired();
+
+        builder.Property(e => e.HasBets)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(e => e.ArchivedAt);
+
+        // Relacionamento com Bets
+        builder.HasMany(e => e.Bets)
+            .WithOne(b => b.Event)
+            .HasForeignKey(b => b.EventId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Índices existentes
         builder.HasIndex(e => e.EventDateTime)
             .HasDatabaseName("IX_Events_EventDateTime");
 
@@ -52,6 +69,16 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
 
         builder.HasIndex(e => new { e.Team1, e.Team2, e.EventDateTime })
             .HasDatabaseName("IX_Events_Teams_DateTime");
+
+        // NOVOS ÍNDICES
+        builder.HasIndex(e => e.IsActive)
+            .HasDatabaseName("IX_Events_IsActive");
+
+        builder.HasIndex(e => e.HasBets)
+            .HasDatabaseName("IX_Events_HasBets");
+
+        builder.HasIndex(e => new { e.IsActive, e.Source })
+            .HasDatabaseName("IX_Events_Active_Source");
 
         builder.ToTable("Events");
     }

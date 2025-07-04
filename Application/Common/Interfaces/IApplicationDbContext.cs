@@ -10,5 +10,6 @@ public interface IApplicationDbContext
     DbSet<Odd> Odds { get; }
     DbSet<ValueBet> ValueBets { get; }
     DbSet<Bet> Bets { get; }
+    DbSet<Transaction> Transactions { get; } // Nova adição
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

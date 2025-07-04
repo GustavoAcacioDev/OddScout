@@ -1,6 +1,5 @@
 ﻿using OddScout.Domain.Common;
 using OddScout.Domain.Enums;
-using System.Security.Cryptography;
 
 namespace OddScout.Domain.Entities;
 
@@ -15,8 +14,14 @@ public class Event : Entity<Guid>
     public DateTime ScrapedAt { get; private set; }
     public OddsSource Source { get; private set; }
 
-    // Navegação para as odds
+    // NOVOS CAMPOS para gerenciar ciclo de vida
+    public bool IsActive { get; private set; } = true;  // Para soft delete
+    public bool HasBets { get; private set; } = false;  // Se tem apostas associadas
+    public DateTime? ArchivedAt { get; private set; }   // Quando foi arquivado
+
+    // Navegação para as odds e apostas
     public ICollection<Odd> Odds { get; private set; } = new List<Odd>();
+    public ICollection<Bet> Bets { get; private set; } = new List<Bet>(); // NOVA navegação
 
     private Event() { }
 
@@ -32,6 +37,8 @@ public class Event : Entity<Guid>
         ExternalLink = externalLink;
         ScrapedAt = DateTime.UtcNow;
         Source = source;
+        IsActive = true;
+        HasBets = false;
     }
 
     public void UpdateStatus(EventStatus status)
@@ -42,6 +49,23 @@ public class Event : Entity<Guid>
     public void UpdateScrapedAt()
     {
         ScrapedAt = DateTime.UtcNow;
+    }
+
+    public void MarkAsHavingBets()
+    {
+        HasBets = true;
+    }
+
+    public void Archive()
+    {
+        IsActive = false;
+        ArchivedAt = DateTime.UtcNow;
+    }
+
+    public void Reactivate()
+    {
+        IsActive = true;
+        ArchivedAt = null;
     }
 
     private static string ValidateAndTrimString(string value, string propertyName)
