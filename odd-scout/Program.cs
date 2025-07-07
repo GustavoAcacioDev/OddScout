@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using odd_scout.Middleware;
 using OddScout.API.Common.Exceptions;
 using OddScout.Application;
 using OddScout.Infrastructure;
 using System.Text;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args); 
 
 // Add services to the container
 builder.Services.AddControllers();
@@ -137,7 +138,10 @@ app.UseHttpsRedirection();
 
 app.UseCors("AllowAll");
 
-// IMPORTANTE: Ordem correta do pipeline
+app.UseRouting();
+
+app.UseApiResponseWrapping();
+
 app.UseAuthentication(); // DEVE vir antes de UseAuthorization
 app.UseAuthorization();
 

@@ -43,12 +43,11 @@ public class SettleBetCommandHandler : ICommandHandler<SettleBetCommand, BetDto>
         string transactionDescription = "";
         TransactionType transactionType;
 
-        // Settle the bet based on outcome
         switch (request.Outcome)
         {
             case BetOutcome.Won:
                 bet.SettleAsWon();
-                transactionAmount = bet.PotentialReturn ?? 0;
+                transactionAmount = bet.PotentialReturn;
                 transactionDescription = $"Bet won: {bet.Event.Team1} vs {bet.Event.Team2}";
                 transactionType = TransactionType.BetWon;
 
@@ -60,19 +59,18 @@ public class SettleBetCommandHandler : ICommandHandler<SettleBetCommand, BetDto>
 
             case BetOutcome.Lost:
                 bet.SettleAsLost();
-                transactionAmount = 0; // No money back
+                transactionAmount = 0;
                 transactionDescription = $"Bet lost: {bet.Event.Team1} vs {bet.Event.Team2}";
-                transactionType = TransactionType.BetPlaced; // No new transaction needed, original stake already deducted
+                transactionType = TransactionType.BetPlaced;
                 _logger.LogInformation("Bet {BetId} settled as LOST. User {UserId}", bet.Id, user.Id);
                 break;
 
             case BetOutcome.Void:
                 bet.VoidBet();
-                transactionAmount = bet.Amount; // Return original stake
+                transactionAmount = bet.Amount;
                 transactionDescription = $"Bet voided: {bet.Event.Team1} vs {bet.Event.Team2}";
                 transactionType = TransactionType.BetRefund;
 
-                // Return original stake to user
                 user.UpdateBalance(user.Balance + transactionAmount);
                 _logger.LogInformation("Bet {BetId} settled as VOID. User {UserId} refunded {Amount}",
                     bet.Id, user.Id, transactionAmount);
@@ -82,7 +80,6 @@ public class SettleBetCommandHandler : ICommandHandler<SettleBetCommand, BetDto>
                 throw new ArgumentException($"Invalid bet outcome: {request.Outcome}");
         }
 
-        // Create transaction only if there's money movement
         if (transactionAmount > 0)
         {
             var transaction = new Transaction(
@@ -91,7 +88,7 @@ public class SettleBetCommandHandler : ICommandHandler<SettleBetCommand, BetDto>
                 transactionAmount,
                 oldBalance,
                 transactionDescription,
-                null, // No external reference
+                null, 
                 bet.Id
             );
 

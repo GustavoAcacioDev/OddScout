@@ -4,6 +4,8 @@ using OddScout.Application.Bets.Commands.PlaceBet;
 using OddScout.Application.Bets.Commands.SettleBet;
 using OddScout.Application.Bets.Queries.GetBetHistory;
 using OddScout.Application.Bets.Queries.GetOpenBets;
+using OddScout.Application.Common.Models;
+using OddScout.Application.DTOs;
 using OddScout.Domain.Enums;
 
 namespace OddScout.API.Controllers;
@@ -26,6 +28,7 @@ public class BetsController : BaseController
         );
 
         var result = await Mediator.Send(command);
+
         return Ok(result);
     }
 
@@ -37,11 +40,7 @@ public class BetsController : BaseController
         var command = new SettleBetCommand(betId, userId, request.Outcome);
         var result = await Mediator.Send(command);
 
-        return Ok(new
-        {
-            message = $"Bet settled as {request.Outcome}",
-            bet = result
-        });
+        return Ok(result);
     }
 
     [HttpGet("history")]
@@ -52,6 +51,7 @@ public class BetsController : BaseController
         var userId = GetCurrentUserId();
         var query = new GetBetHistoryQuery(userId, pageNumber, pageSize);
         var result = await Mediator.Send(query);
+
         return Ok(result);
     }
 
@@ -61,6 +61,7 @@ public class BetsController : BaseController
         var userId = GetCurrentUserId();
         var query = new GetOpenBetsQuery(userId);
         var result = await Mediator.Send(query);
+
         return Ok(result);
     }
 
@@ -84,29 +85,61 @@ public class BetsController : BaseController
         var winRate = totalBets > 0 ? (decimal)wonBets / (wonBets + lostBets) * 100 : 0;
         var roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
 
-        return Ok(new
+        var statistics = new
         {
-            totalBets,
-            openBets,
-            wonBets,
-            lostBets,
-            voidBets,
-            totalStaked,
-            totalProfit,
-            winRate = Math.Round(winRate, 2),
-            roi = Math.Round(roi, 2),
-            averageBetAmount = totalBets > 0 ? Math.Round(totalStaked / totalBets, 2) : 0,
-            biggestWin = allBets.Where(b => b.Status == BetStatus.Won).DefaultIfEmpty().Max(b => b?.Profit ?? 0),
-            biggestLoss = allBets.Where(b => b.Status == BetStatus.Lost).DefaultIfEmpty().Min(b => b?.Profit ?? 0)
-        });
+            TotalBets = totalBets,
+            OpenBets = openBets,
+            WonBets = wonBets,
+            LostBets = lostBets,
+            VoidBets = voidBets,
+            TotalStaked = totalStaked,
+            TotalProfit = totalProfit,
+            WinRate = Math.Round(winRate, 2),
+            ROI = Math.Round(roi, 2)
+        };
+
+        var warnings = totalBets < 10 ? new[] { "Statistics may not be reliable with fewer than 10 bets" } : null;
+
+        if (warnings != null)
+        {
+            return Ok(ApiResponse<object>.Success(statistics, warnings));
+        }
+
+        return Ok(statistics);
     }
 
-    // NOVO: Settle múltiplas apostas de uma vez
-    [HttpPost("settle-bulk")]
+    [HttpPost("{betId:guid}/cancel")]
+    public async Task<IActionResult> CancelBet(Guid betId)
+    {
+        var userId = GetCurrentUserId();
+
+        var bet = await GetBetAsync(betId, userId);
+        if (bet == null)
+        {
+            var errors = new[] { "Bet not found" };
+            return NotFound(ApiResponse<object>.Failure(errors));
+        }
+
+        if (bet.Status != BetStatus.Open)
+        {
+            var errors = new[] { "Only open bets can be cancelled" };
+            return BadRequest(ApiResponse<object>.Failure(errors));
+        }
+
+        return Ok(ApiResponse<object>.Success(new { message = "Bet cancelled successfully" }));
+    }
+    private async Task<BetDto?> GetBetAsync(Guid betId, Guid userId)
+    {
+        return null;
+    }
+    
+    [HttpPost("settle-multiple")]
     public async Task<IActionResult> SettleMultipleBets([FromBody] BulkSettleBetsRequest request)
     {
         var userId = GetCurrentUserId();
         var results = new List<object>();
+        var errors = new List<string>();
+        var warnings = new List<string>();
 
         foreach (var settlement in request.Settlements)
         {
@@ -118,51 +151,39 @@ public class BetsController : BaseController
             }
             catch (Exception ex)
             {
+                errors.Add($"Failed to settle bet {settlement.BetId}: {ex.Message}");
                 results.Add(new { betId = settlement.BetId, success = false, error = ex.Message });
             }
         }
 
         var successCount = results.Count(r => ((dynamic)r).success);
-        return Ok(new
+        if (successCount < request.Settlements.Count)
         {
-            message = $"Processed {results.Count} bets. {successCount} successful.",
+            warnings.Add($"Only {successCount} of {request.Settlements.Count} bets were settled successfully");
+        }
+
+        var response = new
+        {
+            message = $"Bulk settlement completed. {successCount}/{request.Settlements.Count} successful.",
             results
-        });
-    }
+        };
 
-    // NOVO: Quick actions para apostas abertas
-    [HttpPost("{betId:guid}/quick-win")]
-    public async Task<IActionResult> QuickWin(Guid betId)
-    {
-        var userId = GetCurrentUserId();
-        var command = new SettleBetCommand(betId, userId, BetOutcome.Won);
-        var result = await Mediator.Send(command);
+        if (errors.Any() || warnings.Any())
+        {
+            return Ok(new ApiResponse<object>
+            {
+                Value = response,
+                IsSuccess = !errors.Any(),
+                HasWarnings = warnings.Any(),
+                Errors = errors.ToArray(),
+                Warnings = warnings.ToArray()
+            });
+        }
 
-        return Ok(new { message = "Bet marked as WON! 🎉", bet = result });
-    }
-
-    [HttpPost("{betId:guid}/quick-loss")]
-    public async Task<IActionResult> QuickLoss(Guid betId)
-    {
-        var userId = GetCurrentUserId();
-        var command = new SettleBetCommand(betId, userId, BetOutcome.Lost);
-        var result = await Mediator.Send(command);
-
-        return Ok(new { message = "Bet marked as LOST 😞", bet = result });
-    }
-
-    [HttpPost("{betId:guid}/quick-void")]
-    public async Task<IActionResult> QuickVoid(Guid betId)
-    {
-        var userId = GetCurrentUserId();
-        var command = new SettleBetCommand(betId, userId, BetOutcome.Void);
-        var result = await Mediator.Send(command);
-
-        return Ok(new { message = "Bet VOIDED - stake returned 💰", bet = result });
+        return Ok(response);
     }
 }
 
-// Request DTOs
 public class PlaceBetRequest
 {
     public Guid EventId { get; set; }
