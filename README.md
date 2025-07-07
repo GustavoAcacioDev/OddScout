@@ -36,7 +36,7 @@ src/
 
 1. **Clone o repositório**
    ```bash
-   git clone [https://github.com/[usuario]/oddscout-backend.git](https://github.com/GustavoAcacioDev/OddScout.git)
+   git clone (https://github.com/GustavoAcacioDev/OddScout.git)
    cd oddscout-backend
    ```
 
