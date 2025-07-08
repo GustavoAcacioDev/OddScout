@@ -8,9 +8,9 @@ public class ResetPasswordCommandValidator : AbstractValidator<ResetPasswordComm
     {
         RuleFor(x => x.Email)
             .NotEmpty()
-            .WithMessage("Email is required")
+            .WithMessage("E-mai obrigatório")
             .EmailAddress()
-            .WithMessage("Invalid email format");
+            .WithMessage("Formato de e-mail inválido");
 
         RuleFor(x => x.ResetToken)
             .NotEmpty()
@@ -20,14 +20,14 @@ public class ResetPasswordCommandValidator : AbstractValidator<ResetPasswordComm
 
         RuleFor(x => x.NewPassword)
             .NotEmpty()
-            .WithMessage("New password is required")
+            .WithMessage("Senha obrigatória")
             .MinimumLength(8)
-            .WithMessage("Password must be at least 8 characters")
+            .WithMessage("A senha precisa conter no mínimo 8 caracteres")
             .Matches(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{8,}$")
-            .WithMessage("Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character");
+            .WithMessage("A senha precisa conter pelo menos uma letra minúscula, uma letra maiúscula, um digito, e um caractere especial");
 
         RuleFor(x => x.ConfirmPassword)
             .Equal(x => x.NewPassword)
-            .WithMessage("Passwords do not match");
+            .WithMessage("As senhas não conhecidem");
     }
 }

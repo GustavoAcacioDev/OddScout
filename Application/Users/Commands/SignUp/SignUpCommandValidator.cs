@@ -8,28 +8,28 @@ public class SignUpCommandValidator : AbstractValidator<SignUpCommand>
     {
         RuleFor(x => x.Name)
             .NotEmpty()
-            .WithMessage("Name is required")
+            .WithMessage("Nome é obrigatório")
             .MaximumLength(100)
-            .WithMessage("Name must not exceed 100 characters");
+            .WithMessage("Nome não pode ter mais de 100 caracteres");
 
         RuleFor(x => x.Email)
             .NotEmpty()
-            .WithMessage("Email is required")
+            .WithMessage("E-mai obrigatório")
             .EmailAddress()
-            .WithMessage("Invalid email format")
+            .WithMessage("Formato de e-mail inválido")
             .MaximumLength(255)
-            .WithMessage("Email must not exceed 255 characters");
+            .WithMessage("E-mail não pode ter mais de 255 caracteres");
 
         RuleFor(x => x.Password)
             .NotEmpty()
-            .WithMessage("Password is required")
+            .WithMessage("Senha obrigatória")
             .MinimumLength(8)
-            .WithMessage("Password must be at least 8 characters")
+            .WithMessage("A senha precisa conter no mínimo 8 caracteres")
             .Matches(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{8,}$")
-            .WithMessage("Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character");
+            .WithMessage("A senha precisa conter pelo menos uma letra minúscula, uma letra maiúscula, um digito, e um caractere especial");
 
         RuleFor(x => x.ConfirmPassword)
             .Equal(x => x.Password)
-            .WithMessage("Passwords do not match");
+            .WithMessage("As senhas não conhecidem");
     }
 }
