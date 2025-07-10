@@ -35,9 +35,12 @@ public class ScrapingController : BaseController
     }
 
     [HttpGet("value-bets")]
-    public async Task<IActionResult> GetValueBets([FromQuery] int? take = null, [FromQuery] decimal? minimumEV = null)
+    public async Task<IActionResult> GetValueBets(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] decimal? minimumEV = null)
     {
-        var query = new GetValueBetsQuery(take, minimumEV);
+        var query = new GetValueBetsQuery(pageNumber, pageSize, minimumEV);
         var result = await Mediator.Send(query);
         return Ok(result);
     }

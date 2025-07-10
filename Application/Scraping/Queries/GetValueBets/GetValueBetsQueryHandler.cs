@@ -1,11 +1,11 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using OddScout.Application.Common.Interfaces;
+using OddScout.Application.DTOs;
 using OddScout.Application.DTOs.Scraping;
-using OddScout.Domain.Enums;
 
 namespace OddScout.Application.Scraping.Queries.GetValueBets;
 
-public class GetValueBetsQueryHandler : IQueryHandler<GetValueBetsQuery, List<ValueBetDto>>
+public class GetValueBetsQueryHandler : IQueryHandler<GetValueBetsQuery, PagedResult<ValueBetDto>>
 {
     private readonly IApplicationDbContext _context;
 
@@ -14,7 +14,7 @@ public class GetValueBetsQueryHandler : IQueryHandler<GetValueBetsQuery, List<Va
         _context = context;
     }
 
-    public async Task<List<ValueBetDto>> Handle(GetValueBetsQuery request, CancellationToken cancellationToken)
+    public async Task<PagedResult<ValueBetDto>> Handle(GetValueBetsQuery request, CancellationToken cancellationToken)
     {
         var query = _context.ValueBets
             .Include(vb => vb.Event)
@@ -26,18 +26,20 @@ public class GetValueBetsQueryHandler : IQueryHandler<GetValueBetsQuery, List<Va
             query = query.Where(vb => vb.ExpectedValue >= request.MinimumEV.Value);
         }
 
-        // Ordenar por EV decrescente
+        // Ordenar por EV decrescente (value bets mais lucrativos primeiro)
         query = query.OrderByDescending(vb => vb.ExpectedValue);
 
-        // Aplicar limite se especificado
-        if (request.Take.HasValue)
-        {
-            query = query.Take(request.Take.Value);
-        }
+        // Get total count for pagination
+        var totalCount = await query.CountAsync(cancellationToken);
 
-        var valueBets = await query.ToListAsync(cancellationToken);
+        // Apply pagination
+        var skip = (request.PageNumber - 1) * request.PageSize;
+        var valueBets = await query
+            .Skip(skip)
+            .Take(request.PageSize)
+            .ToListAsync(cancellationToken);
 
-        return valueBets.Select(vb => new ValueBetDto
+        var valueBetDtos = valueBets.Select(vb => new ValueBetDto
         {
             Id = vb.Id,
             League = vb.Event.League,
@@ -53,5 +55,7 @@ public class GetValueBetsQueryHandler : IQueryHandler<GetValueBetsQuery, List<Va
             ConfidenceScore = vb.ConfidenceScore,
             CalculatedAt = vb.CalculatedAt
         }).ToList();
+
+        return PagedResult<ValueBetDto>.Create(valueBetDtos, request.PageNumber, request.PageSize, totalCount);
     }
 }
