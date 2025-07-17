@@ -120,6 +120,11 @@ public class User : Entity<Guid>
         PasswordResetTokenExpiry = null;
     }
 
+    public void ChangePassword(string newPasswordHash)
+    {
+        PasswordHash = ValidatePasswordHash(newPasswordHash);
+    }
+
     public bool IsPasswordResetTokenValid(string token)
     {
         return !string.IsNullOrEmpty(PasswordResetToken) &&
