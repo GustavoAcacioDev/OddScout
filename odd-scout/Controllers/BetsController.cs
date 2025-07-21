@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using OddScout.Application.Bets.Commands.PlaceBet;
 using OddScout.Application.Bets.Commands.SettleBet;
 using OddScout.Application.Bets.Queries.GetBetHistory;
+using OddScout.Application.Bets.Queries.GetBetStatistics;
 using OddScout.Application.Bets.Queries.GetOpenBets;
 using OddScout.Application.Common.Models;
 using OddScout.Application.DTOs;
@@ -69,43 +70,10 @@ public class BetsController : BaseController
     public async Task<IActionResult> GetBetStatistics()
     {
         var userId = GetCurrentUserId();
+        var query = new GetBetStatisticsQuery(userId);
+        var result = await Mediator.Send(query);
 
-        // Get all user bets for statistics (using a large page size to get all)
-        var allBetsQuery = new GetBetHistoryQuery(userId, 1, 10000);
-        var allBetsResult = await Mediator.Send(allBetsQuery);
-        var allBets = allBetsResult.Items;
-
-        var totalBets = allBets.Count;
-        var openBets = allBets.Count(b => b.Status == BetStatus.Open);
-        var wonBets = allBets.Count(b => b.Status == BetStatus.Won);
-        var lostBets = allBets.Count(b => b.Status == BetStatus.Lost);
-        var voidBets = allBets.Count(b => b.Status == BetStatus.Void);
-        var totalStaked = allBets.Sum(b => b.Amount);
-        var totalProfit = allBets.Sum(b => b.Profit);
-        var winRate = totalBets > 0 ? (decimal)wonBets / (wonBets + lostBets) * 100 : 0;
-        var roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
-
-        var statistics = new
-        {
-            TotalBets = totalBets,
-            OpenBets = openBets,
-            WonBets = wonBets,
-            LostBets = lostBets,
-            VoidBets = voidBets,
-            TotalStaked = totalStaked,
-            TotalProfit = totalProfit,
-            WinRate = Math.Round(winRate, 2),
-            ROI = Math.Round(roi, 2)
-        };
-
-        var warnings = totalBets < 10 ? new[] { "Statistics may not be reliable with fewer than 10 bets" } : null;
-
-        if (warnings != null)
-        {
-            return Ok(ApiResponse<object>.Success(statistics, warnings));
-        }
-
-        return Ok(statistics);
+        return Ok(result);
     }
 
     [HttpPost("{betId:guid}/cancel")]
