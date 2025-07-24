@@ -1,40 +1,33 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-jammy AS base
 WORKDIR /app
 EXPOSE 8080
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS build
 WORKDIR /src
 
 # Copy project files
-COPY ["odd-scout/OddScout.API.csproj", "odd-scout/"]
-COPY ["Application/OddScout.Application.csproj", "Application/"]
-COPY ["Domain/OddScout.Domain.csproj", "Domain/"]
-COPY ["Infrastructure/OddScout.Infrastructure.csproj", "Infrastructure/"]
+COPY ["odd-scout/*.csproj", "odd-scout/"]
+COPY ["Application/*.csproj", "Application/"]
+COPY ["Domain/*.csproj", "Domain/"]
+COPY ["Infrastructure/*.csproj", "Infrastructure/"]
 
-# Restore dependencies
-RUN dotnet restore "odd-scout/OddScout.API.csproj"
+# Restore with retry logic
+RUN dotnet restore "odd-scout/*.csproj" --disable-parallel
 
 # Copy source code
 COPY . .
 
-# Build application
+# Build
 WORKDIR "/src/odd-scout"
-RUN dotnet build "OddScout.API.csproj" -c Release -o /app/build
-
-# Publish
-FROM build AS publish
-RUN dotnet publish "OddScout.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish -c Release -o /app/publish --no-restore
 
 # Runtime stage
 FROM base AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
+COPY --from=build /app/publish .
 
-# Create non-root user for security
-RUN adduser --disabled-password --gecos '' appuser && chown -R appuser /app
-USER appuser
-
+USER $APP_UID
 ENTRYPOINT ["dotnet", "OddScout.API.dll"]
