@@ -28,7 +28,7 @@ public class SignUpCommandHandler : ICommandHandler<SignUpCommand, AuthResult>
             .FirstOrDefaultAsync(u => u.Email == request.Email.ToLowerInvariant(), cancellationToken);
 
         if (existingUser is not null)
-            throw new InvalidOperationException("User with this email already exists");
+            throw new InvalidOperationException("Esse e-mail já está sendo utilizado por outro usuário");
 
         // Hash password
         var hashedPassword = _passwordService.HashPassword(request.Password);
