@@ -15,11 +15,23 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        // Database
+        // Database - Handle Railway DATABASE_URL format
+        var connectionString = GetConnectionString(configuration);
+        var databaseProvider = configuration["DatabaseProvider"] ?? "PostgreSQL";
+
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseSqlServer(
-                configuration.GetConnectionString("DefaultConnection"),
-                b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)));
+        {
+            if (databaseProvider == "PostgreSQL")
+            {
+                options.UseNpgsql(connectionString,
+                    b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
+            }
+            else
+            {
+                options.UseSqlServer(connectionString,
+                    b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
+            }
+        });
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
@@ -48,5 +60,25 @@ public static class DependencyInjection
         services.AddScoped<IValueBetCalculationService, ValueBetCalculationService>();
 
         return services;
+    }
+
+    private static string GetConnectionString(IConfiguration configuration)
+    {
+        // First try to get DATABASE_URL (Railway format)
+        var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+        if (!string.IsNullOrEmpty(databaseUrl))
+        {
+            return ConvertDatabaseUrlToConnectionString(databaseUrl);
+        }
+
+        // Fallback to DefaultConnection
+        return configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("No database connection string found");
+    }
+
+    private static string ConvertDatabaseUrlToConnectionString(string databaseUrl)
+    {
+        var uri = new Uri(databaseUrl);
+        var connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.LocalPath.TrimStart('/')};Username={uri.UserInfo.Split(':')[0]};Password={uri.UserInfo.Split(':')[1]};SSL Mode=Require;Trust Server Certificate=true";
+        return connectionString;
     }
 }
