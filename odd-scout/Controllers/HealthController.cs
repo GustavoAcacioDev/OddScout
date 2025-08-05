@@ -1,15 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using OddScout.Application.Common.Interfaces;
+using OddScout.Infrastructure.Data;
 
 namespace OddScout.API.Controllers;
 
 [ApiController]
 public class HealthController : ControllerBase
 {
-    private readonly IApplicationDbContext _context;
+    private readonly ApplicationDbContext _context;
 
-    public HealthController(IApplicationDbContext context)
+    public HealthController(ApplicationDbContext context)
     {
         _context = context;
     }
