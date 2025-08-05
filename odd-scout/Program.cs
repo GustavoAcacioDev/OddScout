@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using odd_scout.Middleware;
 using OddScout.API.Common.Exceptions;
 using OddScout.Application;
 using OddScout.Infrastructure;
+using OddScout.Infrastructure.Data;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args); 
@@ -75,8 +77,8 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
-        ValidateLifetime = true, // IMPORTANTE: Validar expiração
-        ClockSkew = TimeSpan.FromMinutes(5), // Tolerância de 5 minutos para diferenças de relógio
+        ValidateLifetime = true, // IMPORTANTE: Validar expiraï¿½ï¿½o
+        ClockSkew = TimeSpan.FromMinutes(5), // Tolerï¿½ncia de 5 minutos para diferenï¿½as de relï¿½gio
         RequireExpirationTime = true,
         // Mapear claims corretamente
         NameClaimType = "name",
@@ -126,6 +128,16 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Auto-migrate database on startup (for Railway deployment)
+if (app.Environment.IsProduction())
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        context.Database.Migrate();
+    }
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
