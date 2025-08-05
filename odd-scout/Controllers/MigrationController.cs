@@ -27,14 +27,15 @@ public class MigrationController : ControllerBase
             // Set timeout for migrations
             _context.Database.SetCommandTimeout(300); // 5 minutes
             
-            await _context.Database.MigrateAsync();
+            // Check if database exists, create if not
+            await _context.Database.EnsureCreatedAsync();
             
             _logger.LogInformation("Database migration completed successfully");
             
             return Ok(new
             {
                 status = "success",
-                message = "Database migrations completed successfully",
+                message = "Database created/migrated successfully",
                 timestamp = DateTime.UtcNow
             });
         }
@@ -46,6 +47,41 @@ public class MigrationController : ControllerBase
             {
                 status = "error",
                 message = "Database migration failed",
+                error = ex.Message,
+                timestamp = DateTime.UtcNow
+            });
+        }
+    }
+
+    [HttpPost("force-create")]
+    public async Task<IActionResult> ForceCreateDatabase()
+    {
+        try
+        {
+            _logger.LogInformation("Force creating database schema...");
+            
+            // Drop and recreate database (use with caution!)
+            await _context.Database.EnsureDeletedAsync();
+            await _context.Database.EnsureCreatedAsync();
+            
+            _logger.LogInformation("Database force created successfully");
+            
+            return Ok(new
+            {
+                status = "success",
+                message = "Database force created successfully",
+                timestamp = DateTime.UtcNow,
+                warning = "All existing data was deleted"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Database force creation failed");
+            
+            return StatusCode(500, new
+            {
+                status = "error",
+                message = "Database force creation failed",
                 error = ex.Message,
                 timestamp = DateTime.UtcNow
             });
