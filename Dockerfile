@@ -50,8 +50,9 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright
-RUN npm install -g playwright-chromium
+# Install Playwright and browsers
+RUN npm install -g playwright
+RUN npx playwright install chromium
 RUN npx playwright install-deps chromium
 
 WORKDIR /app
