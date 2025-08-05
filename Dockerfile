@@ -17,19 +17,20 @@ COPY . .
 WORKDIR "/app/odd-scout"
 RUN dotnet publish "OddScout.API.csproj" -c Release -o /app/publish --no-restore -p:TreatWarningsAsErrors=false -p:UseAppHost=false
 
-# Use the official .NET 8.0 runtime image for running
+# Use a custom runtime image with Node.js for Playwright
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 
-# Install dependencies for Playwright (web scraping)
+# Install Node.js and npm for Playwright
 RUN apt-get update && apt-get install -y \
+    curl \
     wget \
     gnupg \
     ca-certificates \
-    procps \
-    libxss1 \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright browsers and dependencies
+# Install Playwright dependencies
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libatk-bridge2.0-0 \
@@ -40,18 +41,21 @@ RUN apt-get update && apt-get install -y \
     libgbm1 \
     libxkbcommon0 \
     libgtk-3-0 \
+    libgconf-2-4 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libcairo-gobject2 \
+    libgdk-pixbuf2.0-0 \
+    libxss1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Playwright
+RUN npm install -g playwright-chromium
+RUN npx playwright install-deps chromium
 
 WORKDIR /app
 COPY --from=build /app/publish .
-
-# Install Playwright
-RUN dotnet tool install --global Microsoft.Playwright.CLI
-ENV PATH="$PATH:/root/.dotnet/tools"
-
-# Install Playwright browsers
-RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # Expose the port
 EXPOSE 8080
