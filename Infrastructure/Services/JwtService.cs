@@ -19,7 +19,13 @@ public class JwtService : IJwtService
 
     public string GenerateAccessToken(Guid userId, string email, string name)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
+        var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? _configuration["Jwt:Key"]!;
+        
+        // Debug logging
+        var keyBytes = Encoding.UTF8.GetBytes(jwtKey);
+        Console.WriteLine($"JWT Key Length: {jwtKey.Length}, Key Bytes: {keyBytes.Length}, First 10 chars: {jwtKey.Substring(0, Math.Min(10, jwtKey.Length))}...");
+        
+        var key = new SymmetricSecurityKey(keyBytes);
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         // CORRIGIDO: Usar claims que funcionam com [Authorize]
