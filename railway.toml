@@ -1,5 +1,9 @@
 [build]
-builder = "nixpacks"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
-[build.env]
-NIXPACKS_DOTNET_VERSION = "8.0"
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

@@ -78,7 +78,7 @@ public class ApiResponseMiddleware
         }
     }
 
-    private async Task<object> WrapResponse(string responseBody, HttpContext context)
+    private Task<object> WrapResponse(string responseBody, HttpContext context)
     {
         try
         {
@@ -88,24 +88,26 @@ public class ApiResponseMiddleware
             // Verificar se já é uma resposta encapsulada (evitar dupla encapsulação)
             if (IsAlreadyWrapped(root))
             {
-                return JsonSerializer.Deserialize<object>(responseBody, _jsonOptions)!;
+                return Task.FromResult(JsonSerializer.Deserialize<object>(responseBody, _jsonOptions)!);
             }
 
             // Determinar tipo de resposta baseado na estrutura
             var responseType = DetermineResponseType(root);
 
-            return responseType switch
+            var result = responseType switch
             {
                 ResponseType.PagedList => WrapPagedListResponse(root),
                 ResponseType.SimpleList => WrapSimpleListResponse(root),
                 ResponseType.SingleObject => WrapSingleObjectResponse(root),
                 _ => WrapSingleObjectResponse(root)
             };
+
+            return Task.FromResult(result);
         }
         catch (JsonException)
         {
             // Se não for JSON válido, encapsular como string
-            return new ApiResponse<string>(responseBody);
+            return Task.FromResult<object>(new ApiResponse<string>(responseBody));
         }
     }
 

@@ -1,0 +1,75 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile*
+docker-compose*
+
+# Visual Studio
+.vs/
+.vscode/
+
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+
+# NuGet packages
+*.nupkg
+**/packages/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# IDE files
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Temporary files
+tmp/
+temp/
+
+# Scripts (they're not needed in production)
+scripts/
+
+# SSH keys
+*.key
+*.key.pub
+
+# README and documentation
+README.md
+*.md

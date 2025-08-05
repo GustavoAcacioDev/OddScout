@@ -96,9 +96,9 @@ public class BetsController : BaseController
 
         return Ok(ApiResponse<object>.Success(new { message = "Bet cancelled successfully" }));
     }
-    private async Task<BetDto?> GetBetAsync(Guid betId, Guid userId)
+    private Task<BetDto?> GetBetAsync(Guid betId, Guid userId)
     {
-        return null;
+        return Task.FromResult<BetDto?>(null);
     }
     
     [HttpPost("settle-multiple")]

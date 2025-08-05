@@ -152,7 +152,7 @@ public class BetbyScrapingService : IBetbyScrapingService
         try
         {
             var btnContainer = await btRoot.QuerySelectorAsync("[data-editor-id=\"eventCardPaginator\"]");
-            var itemsText = await btnContainer?.QuerySelectorAllAsync("span");
+            var itemsText = btnContainer != null ? await btnContainer.QuerySelectorAllAsync("span") : null;
             if (itemsText != null && itemsText.Count > 1)
             {
                 var text = await itemsText[1].InnerTextAsync();
