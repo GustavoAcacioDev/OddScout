@@ -5,7 +5,6 @@ using OddScout.Application.Common.Interfaces;
 namespace OddScout.API.Controllers;
 
 [ApiController]
-[Route("[controller]")]
 public class HealthController : ControllerBase
 {
     private readonly IApplicationDbContext _context;
@@ -15,20 +14,22 @@ public class HealthController : ControllerBase
         _context = context;
     }
 
-    [HttpGet]
+    [HttpGet("health")]
+    [HttpGet("/health")]  // Explicit route for Railway
     public async Task<IActionResult> Get()
     {
         try
         {
-            // Simple database connectivity check
-            await _context.Users.Take(1).ToListAsync();
+            // Basic health check without database dependency (for initial deployment)
+            var canConnectToDb = await CanConnectToDatabase();
             
             return Ok(new
             {
                 status = "healthy",
                 timestamp = DateTime.UtcNow,
                 environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
-                version = "1.0.0"
+                version = "1.0.0",
+                database = canConnectToDb ? "connected" : "connection_failed"
             });
         }
         catch (Exception ex)
@@ -40,5 +41,31 @@ public class HealthController : ControllerBase
                 error = ex.Message
             });
         }
+    }
+
+    private async Task<bool> CanConnectToDatabase()
+    {
+        try
+        {
+            await _context.Database.CanConnectAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    [HttpGet("/")]
+    [HttpGet("")]
+    public IActionResult Root()
+    {
+        return Ok(new
+        {
+            message = "OddScout API is running",
+            timestamp = DateTime.UtcNow,
+            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            version = "1.0.0"
+        });
     }
 }
