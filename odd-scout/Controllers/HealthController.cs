@@ -14,8 +14,7 @@ public class HealthController : ControllerBase
         _context = context;
     }
 
-    [HttpGet("health")]
-    [HttpGet("/health")]  // Explicit route for Railway
+    [HttpGet("/health")]
     public async Task<IActionResult> Get()
     {
         try
@@ -57,7 +56,6 @@ public class HealthController : ControllerBase
     }
 
     [HttpGet("/")]
-    [HttpGet("")]
     public IActionResult Root()
     {
         return Ok(new
