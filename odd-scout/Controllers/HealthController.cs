@@ -66,4 +66,23 @@ public class HealthController : ControllerBase
             version = "1.0.0"
         });
     }
+
+    [HttpGet("/debug/jwt")]
+    public IActionResult DebugJwt()
+    {
+        var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+        var keyLength = string.IsNullOrEmpty(jwtKey) ? 0 : jwtKey.Length;
+        var keyBytes = string.IsNullOrEmpty(jwtKey) ? 0 : System.Text.Encoding.UTF8.GetBytes(jwtKey).Length;
+
+        return Ok(new
+        {
+            jwtKeyExists = !string.IsNullOrEmpty(jwtKey),
+            jwtKeyLength = keyLength,
+            jwtKeyBytes = keyBytes,
+            minRequiredBytes = 32, // 256 bits = 32 bytes
+            isValidLength = keyBytes >= 32,
+            firstChars = string.IsNullOrEmpty(jwtKey) ? "N/A" : jwtKey.Substring(0, Math.Min(10, jwtKey.Length)) + "...",
+            timestamp = DateTime.UtcNow
+        });
+    }
 }
