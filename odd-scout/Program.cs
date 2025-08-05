@@ -129,15 +129,36 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Auto-migrate database on startup (for Railway deployment)
+// Auto-migrate database on startup (for Railway deployment) - DISABLED FOR NOW
+// Uncomment when needed or use /migration/run endpoint instead
+/*
 if (app.Environment.IsProduction())
 {
-    using (var scope = app.Services.CreateScope())
+    try
     {
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        context.Database.Migrate();
+        using (var scope = app.Services.CreateScope())
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            
+            logger.LogInformation("Starting database migration...");
+            
+            // Set timeout for migrations
+            context.Database.SetCommandTimeout(120); // 2 minutes
+            
+            await context.Database.MigrateAsync();
+            
+            logger.LogInformation("Database migration completed successfully");
+        }
+    }
+    catch (Exception ex)
+    {
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Database migration failed. Application will continue without migrations.");
+        // Don't throw - let the app start even if migration fails
     }
 }
+*/
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
