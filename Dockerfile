@@ -19,7 +19,7 @@ WORKDIR "/app/odd-scout"
 RUN dotnet publish "OddScout.API.csproj" -c Release -o /app/publish --no-restore -p:TreatWarningsAsErrors=false -p:UseAppHost=false
 
 # Use Playwright base image with .NET runtime
-FROM mcr.microsoft.com/playwright/dotnet:v1.40.0-jammy AS final
+FROM mcr.microsoft.com/playwright/dotnet:v1.53.0-jammy AS final
 
 # Install .NET 8 runtime on the Playwright image
 RUN apt-get update && apt-get install -y --no-install-recommends \
