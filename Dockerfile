@@ -13,6 +13,11 @@ RUN dotnet restore "odd-scout/OddScout.API.csproj"
 # Copy the rest of the source code
 COPY . .
 
+# Install Playwright CLI and browsers in build stage
+RUN dotnet tool install --global Microsoft.Playwright.CLI
+ENV PATH="${PATH}:/root/.dotnet/tools"
+RUN playwright install chromium --with-deps
+
 # Publish the application directly (skip separate build step)
 WORKDIR "/app/odd-scout"
 RUN dotnet publish "OddScout.API.csproj" -c Release -o /app/publish --no-restore -p:TreatWarningsAsErrors=false -p:UseAppHost=false
@@ -50,10 +55,8 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright browsers using .NET tool
-RUN dotnet tool install --global Microsoft.Playwright.CLI
-ENV PATH="${PATH}:/root/.dotnet/tools"
-RUN playwright install chromium --with-deps
+# Copy Playwright browsers from build stage
+COPY --from=build /root/.cache/ms-playwright /root/.cache/ms-playwright
 
 WORKDIR /app
 COPY --from=build /app/publish .
