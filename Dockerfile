@@ -25,18 +25,8 @@ RUN dotnet publish "OddScout.API.csproj" -c Release -o /app/publish --no-restore
 # Use a custom runtime image with Node.js for Playwright
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 
-# Install Node.js and npm for Playwright
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    gnupg \
-    ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Playwright dependencies
-RUN apt-get update && apt-get install -y \
+# Install Playwright dependencies in a single layer to reduce size and memory usage
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 \
     libatk-bridge2.0-0 \
     libdrm2 \
@@ -46,14 +36,14 @@ RUN apt-get update && apt-get install -y \
     libgbm1 \
     libxkbcommon0 \
     libgtk-3-0 \
-    libgconf-2-4 \
     libasound2 \
     libpangocairo-1.0-0 \
     libatk1.0-0 \
     libcairo-gobject2 \
     libgdk-pixbuf2.0-0 \
     libxss1 \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy Playwright browsers from build stage
 COPY --from=build /root/.cache/ms-playwright /root/.cache/ms-playwright
