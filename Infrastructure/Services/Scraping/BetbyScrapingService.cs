@@ -27,21 +27,32 @@ public class BetbyScrapingService : IBetbyScrapingService
             using var playwright = await Playwright.CreateAsync();
             await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true
+                Headless = true,
+                Args = new[] { 
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-accelerated-2d-canvas",
+                    "--no-first-run",
+                    "--no-zygote",
+                    "--single-process",
+                    "--disable-gpu"
+                }
             });
 
             var context = await browser.NewContextAsync(new BrowserNewContextOptions
             {
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+                UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             });
 
             var page = await context.NewPageAsync();
 
             const string url = "https://demo.betby.com/sportsbook/tile/event-builder?selectedSports=soccer-1&selectedRange=1";
-            await page.GotoAsync(url);
-            await page.WaitForTimeoutAsync(5000);
+            await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+            await page.WaitForTimeoutAsync(10000); // Increased timeout
 
-            await page.WaitForSelectorAsync("body", new PageWaitForSelectorOptions { Timeout = 20000 });
+            await page.WaitForSelectorAsync("body", new PageWaitForSelectorOptions { Timeout = 30000 });
 
             var shadowRoot = await GetShadowRootAsync(page, "#bt-inner-page");
             if (shadowRoot == null)
@@ -118,7 +129,7 @@ public class BetbyScrapingService : IBetbyScrapingService
     {
         try
         {
-            var shadowHost = await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions { Timeout = 20000 });
+            var shadowHost = await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions { Timeout = 30000 });
             if (shadowHost == null) return null;
 
             var shadowRootHandle = await shadowHost.EvaluateHandleAsync("node => node.shadowRoot");
