@@ -31,7 +31,7 @@ public class PinnacleScrapingService : IPinnacleScrapingService
         {
             _logger.LogInformation("Starting Pinnacle scraping...");
 
-            var apiKey = _configuration["RapidApi:PinnacleKey"];
+            var apiKey = Environment.GetEnvironmentVariable("RAPIDAPI_PINNACLE_KEY") ?? _configuration["RapidApi:PinnacleKey"];
             if (string.IsNullOrEmpty(apiKey))
             {
                 _logger.LogError("Pinnacle API key not configured");

@@ -30,7 +30,7 @@ public class TestController : ControllerBase
 
             using var httpClient = new HttpClient(handler);
 
-            var apiKey = _configuration["RapidApi:PinnacleKey"];
+            var apiKey = Environment.GetEnvironmentVariable("RAPIDAPI_PINNACLE_KEY") ?? _configuration["RapidApi:PinnacleKey"];
 
             httpClient.DefaultRequestHeaders.Clear();
             httpClient.DefaultRequestHeaders.Add("x-rapidapi-key", apiKey);
@@ -121,7 +121,7 @@ public class TestController : ControllerBase
 
             using var httpClient = new HttpClient(handler);
 
-            var apiKey = _configuration["RapidApi:PinnacleKey"];
+            var apiKey = Environment.GetEnvironmentVariable("RAPIDAPI_PINNACLE_KEY") ?? _configuration["RapidApi:PinnacleKey"];
 
             httpClient.DefaultRequestHeaders.Clear();
             httpClient.DefaultRequestHeaders.Add("x-rapidapi-key", apiKey);

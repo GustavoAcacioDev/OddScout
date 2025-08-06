@@ -50,10 +50,10 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright and browsers
-RUN npm install -g playwright
-RUN npx playwright install chromium
-RUN npx playwright install-deps chromium
+# Install Playwright browsers using .NET tool
+RUN dotnet tool install --global Microsoft.Playwright.CLI
+ENV PATH="${PATH}:/root/.dotnet/tools"
+RUN playwright install chromium --with-deps
 
 WORKDIR /app
 COPY --from=build /app/publish .
