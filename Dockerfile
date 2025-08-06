@@ -13,40 +13,26 @@ RUN dotnet restore "odd-scout/OddScout.API.csproj"
 # Copy the rest of the source code
 COPY . .
 
-# Install Playwright CLI and browsers in build stage
-RUN dotnet tool install --global Microsoft.Playwright.CLI
-ENV PATH="${PATH}:/root/.dotnet/tools"
-RUN playwright install chromium --with-deps
 
 # Publish the application directly (skip separate build step)
 WORKDIR "/app/odd-scout"
 RUN dotnet publish "OddScout.API.csproj" -c Release -o /app/publish --no-restore -p:TreatWarningsAsErrors=false -p:UseAppHost=false
 
-# Use a custom runtime image with Node.js for Playwright
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+# Use Playwright base image with .NET runtime
+FROM mcr.microsoft.com/playwright/dotnet:v1.40.0-jammy AS final
 
-# Install Playwright dependencies in a single layer to reduce size and memory usage
+# Install .NET 8 runtime on the Playwright image
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libxkbcommon0 \
-    libgtk-3-0 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libatk1.0-0 \
-    libcairo-gobject2 \
-    libgdk-pixbuf2.0-0 \
-    libxss1 \
+    wget \
+    ca-certificates \
+    && wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb \
+    && dpkg -i packages-microsoft-prod.deb \
+    && rm packages-microsoft-prod.deb \
+    && apt-get update \
+    && apt-get install -y aspnetcore-runtime-8.0 \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy Playwright browsers from build stage
-COPY --from=build /root/.cache/ms-playwright /root/.cache/ms-playwright
 
 WORKDIR /app
 COPY --from=build /app/publish .
