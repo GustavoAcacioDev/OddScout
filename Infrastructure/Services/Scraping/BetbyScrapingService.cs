@@ -27,87 +27,87 @@ public class BetbyScrapingService : IBetbyScrapingService
             using var playwright = await Playwright.CreateAsync();
             await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
-                Headless = true,
-                Args = new[] { 
-                    "--no-sandbox", 
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-accelerated-2d-canvas",
-                    "--no-first-run",
-                    "--no-zygote",
-                    "--single-process",
-                    "--disable-gpu"
-                }
+                Headless = true
             });
 
             var context = await browser.NewContextAsync(new BrowserNewContextOptions
             {
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 }
             });
 
             var page = await context.NewPageAsync();
 
             const string url = "https://demo.betby.com/sportsbook/tile/event-builder?selectedSports=soccer-1&selectedRange=1";
-            await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-            await page.WaitForTimeoutAsync(10000); // Increased timeout
+            await page.GotoAsync(url);
+            await page.WaitForTimeoutAsync(5000);
 
-            await page.WaitForSelectorAsync("body", new PageWaitForSelectorOptions { Timeout = 30000 });
+            await page.WaitForSelectorAsync("body", new PageWaitForSelectorOptions { Timeout = 20000 });
 
-            var shadowRoot = await GetShadowRootAsync(page, "#bt-inner-page");
-            if (shadowRoot == null)
+            // Primeiro vamos verificar se ainda existe Shadow DOM
+            var hasShadowRoot = await CheckShadowRootExistsAsync(page, "#bt-root");
+            _logger.LogInformation("Shadow DOM exists: {HasShadow}", hasShadowRoot);
+
+            IElementHandle? container = null;
+
+            if (hasShadowRoot)
             {
-                _logger.LogError("Could not access Shadow DOM");
-                return new List<ScrapedEventDto>();
+                // Tenta o método antigo com Shadow DOM
+                var shadowRoot = await GetShadowRootAsync(page, "#bt-root");
+                if (shadowRoot != null)
+                {
+                    container = await shadowRoot.QuerySelectorAsync("#bt-root");
+                }
+            }
+            else
+            {
+                // Sem Shadow DOM - acessa diretamente
+                container = await page.QuerySelectorAsync("#bt-root");
             }
 
-            var btRoot = await shadowRoot.QuerySelectorAsync("#bt-root");
-            if (btRoot == null)
+            if (container == null)
             {
-                _logger.LogError("#bt-root element not found in Shadow DOM");
+                _logger.LogError("Could not find container element");
                 return new List<ScrapedEventDto>();
             }
 
             await DismissModalAsync(page);
 
-            await btRoot.WaitForSelectorAsync("[data-editor-id=\"eventCardPaginator\"]");
-            var totalBets = await GetTotalBetsAsync(btRoot);
-            var lastPage = (int)Math.Ceiling(totalBets / 24.0);
-            var nextButton = await GetNextButtonAsync(btRoot);
+            // Aguarda os elementos carregarem
+            await page.WaitForTimeoutAsync(3000);
+
+            // Tenta encontrar os cards com os novos seletores baseados na imagem
+            var eventCards = await FindEventCardsAsync(container);
+
+            if (eventCards.Count == 0)
+            {
+                _logger.LogWarning("No event cards found. Let's debug the page structure.");
+                await DebugPageStructureAsync(page, container);
+                return new List<ScrapedEventDto>();
+            }
 
             var cleanedData = new List<ScrapedEventDto>();
 
-            for (int currentPage = 1; currentPage <= lastPage; currentPage++)
+            foreach (var card in eventCards)
             {
-                await btRoot.WaitForSelectorAsync("[data-editor-id=\"eventCard\"]");
-                var eventCards = await btRoot.QuerySelectorAllAsync("[data-editor-id=\"eventCard\"]");
-
-                foreach (var card in eventCards)
+                try
                 {
-                    try
-                    {
-                        var linkElement = await card.QuerySelectorAsync("[data-editor-id=\"eventCardContent\"]");
-                        var href = linkElement != null ? await linkElement.GetAttributeAsync("href") : null;
-                        var fullText = await card.InnerTextAsync();
-                        var parsed = ParseRawText(fullText);
+                    var fullText = await card.InnerTextAsync();
+                    var parsed = ParseRawText(fullText);
 
-                        if (parsed != null)
-                        {
-                            parsed.Link = href;
-                            cleanedData.Add(parsed);
-                        }
-                    }
-                    catch (Exception ex)
+                    if (parsed != null)
                     {
-                        _logger.LogWarning("Failed to parse event card: {Error}", ex.Message);
+                        // Tenta encontrar o link do evento
+                        var linkElement = await card.QuerySelectorAsync("a") ??
+                                        await card.QuerySelectorAsync("[href]");
+                        var href = linkElement != null ? await linkElement.GetAttributeAsync("href") : null;
+
+                        parsed.Link = href;
+                        cleanedData.Add(parsed);
                     }
                 }
-
-                if (currentPage < lastPage && nextButton != null)
+                catch (Exception ex)
                 {
-                    await nextButton.ClickAsync();
-                    await btRoot.WaitForSelectorAsync("[data-editor-id=\"eventCard\"]:nth-child(1)",
-                        new ElementHandleWaitForSelectorOptions { State = WaitForSelectorState.Attached });
+                    _logger.LogWarning("Failed to parse event card: {Error}", ex.Message);
                 }
             }
 
@@ -125,20 +125,108 @@ public class BetbyScrapingService : IBetbyScrapingService
         }
     }
 
+    private async Task<bool> CheckShadowRootExistsAsync(IPage page, string selector)
+    {
+        try
+        {
+            var shadowHost = await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions { Timeout = 20000 });
+            if (shadowHost == null) return false;
+
+            var hasShadowRoot = await shadowHost.EvaluateAsync<bool>("node => node.shadowRoot !== null");
+            return hasShadowRoot;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check shadow root for {Selector}", selector);
+            return false;
+        }
+    }
+
     private async Task<IElementHandle?> GetShadowRootAsync(IPage page, string selector)
     {
         try
         {
-            var shadowHost = await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions { Timeout = 30000 });
+            var shadowHost = await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions { Timeout = 20000 });
             if (shadowHost == null) return null;
 
+            // Verificação mais robusta do Shadow DOM
             var shadowRootHandle = await shadowHost.EvaluateHandleAsync("node => node.shadowRoot");
+
+            // Verifica se realmente é um elemento válido
+            var isElement = await shadowRootHandle.EvaluateAsync<bool>("node => node && node.nodeType === 11"); // Node.DOCUMENT_FRAGMENT_NODE
+
+            if (!isElement)
+            {
+                _logger.LogWarning("Shadow root is not a valid document fragment");
+                return null;
+            }
+
             return shadowRootHandle.AsElement();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get shadow root for {Selector}", selector);
             return null;
+        }
+    }
+
+    private async Task<List<IElementHandle>> FindEventCardsAsync(IElementHandle container)
+    {
+        // Tenta vários seletores possíveis baseados na nova estrutura
+        var possibleSelectors = new[]
+        {
+            "[data-editor-id=\"eventCard\"]", // Seletor original
+            ".bt264", // Baseado na imagem - parece ser o container dos cards
+            "[class*=\"bt2\"]", // Classes que começam com bt2
+            "[class*=\"card\"]", // Qualquer coisa com card no nome
+            "div[class*=\"bt\"][class*=\"64\"]" // Divs com classes bt e 64
+        };
+
+        foreach (var selector in possibleSelectors)
+        {
+            try
+            {
+                var elements = await container.QuerySelectorAllAsync(selector);
+                if (elements.Count > 0)
+                {
+                    _logger.LogInformation("Found {Count} elements with selector: {Selector}", elements.Count, selector);
+                    return elements.ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Failed to query selector {Selector}: {Error}", selector, ex.Message);
+            }
+        }
+
+        return new List<IElementHandle>();
+    }
+
+    private async Task DebugPageStructureAsync(IPage page, IElementHandle container)
+    {
+        try
+        {
+            // Loga a estrutura da página para debug
+            var outerHTML = await container.InnerHTMLAsync();
+            _logger.LogInformation("Container HTML structure (first 1000 chars): {HTML}",
+                outerHTML.Length > 1000 ? outerHTML.Substring(0, 1000) + "..." : outerHTML);
+
+            // Tenta encontrar qualquer div dentro do container
+            var allDivs = await container.QuerySelectorAllAsync("div");
+            _logger.LogInformation("Found {Count} div elements in container", allDivs.Count);
+
+            // Analisa as classes dos primeiros divs
+            for (int i = 0; i < Math.Min(10, allDivs.Count); i++)
+            {
+                var className = await allDivs[i].GetAttributeAsync("class");
+                var innerHTML = await allDivs[i].InnerHTMLAsync();
+                _logger.LogInformation("Div {Index}: class='{Class}', content length={Length}",
+                    i, className ?? "no-class", innerHTML?.Length ?? 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to debug page structure");
         }
     }
 
@@ -162,15 +250,37 @@ public class BetbyScrapingService : IBetbyScrapingService
     {
         try
         {
+            // Tenta o seletor original primeiro
             var btnContainer = await btRoot.QuerySelectorAsync("[data-editor-id=\"eventCardPaginator\"]");
-            var itemsText = btnContainer != null ? await btnContainer.QuerySelectorAllAsync("span") : null;
-            if (itemsText != null && itemsText.Count > 1)
+
+            // Se não encontrar, tenta seletores alternativos
+            if (btnContainer == null)
             {
-                var text = await itemsText[1].InnerTextAsync();
-                var match = Regex.Match(text, @"\d+$");
-                if (match.Success && int.TryParse(match.Value, out var total))
+                var possiblePaginatorSelectors = new[]
                 {
-                    return total;
+                    "[class*=\"paginator\"]",
+                    "[class*=\"pagination\"]",
+                    "div:has-text(\"of\")" // Divs que contêm "of" (como "1 of 10")
+                };
+
+                foreach (var selector in possiblePaginatorSelectors)
+                {
+                    btnContainer = await btRoot.QuerySelectorAsync(selector);
+                    if (btnContainer != null) break;
+                }
+            }
+
+            if (btnContainer != null)
+            {
+                var itemsText = await btnContainer.QuerySelectorAllAsync("span");
+                if (itemsText != null && itemsText.Count > 1)
+                {
+                    var text = await itemsText[1].InnerTextAsync();
+                    var match = Regex.Match(text, @"\d+$");
+                    if (match.Success && int.TryParse(match.Value, out var total))
+                    {
+                        return total;
+                    }
                 }
             }
         }
@@ -187,13 +297,32 @@ public class BetbyScrapingService : IBetbyScrapingService
         try
         {
             var btnsContainer = await btRoot.QuerySelectorAllAsync("[data-editor-id=\"eventCardPaginatorArrow\"]");
-            return btnsContainer.Count > 1 ? btnsContainer[1] : null;
+            if (btnsContainer.Count > 1)
+            {
+                return btnsContainer[1];
+            }
+
+            // Tenta seletores alternativos para o botão next
+            var possibleNextSelectors = new[]
+            {
+                "button:has-text(\"Next\")",
+                "button:has-text(\">\")",
+                "[class*=\"next\"]",
+                "[class*=\"arrow\"]:last-child"
+            };
+
+            foreach (var selector in possibleNextSelectors)
+            {
+                var nextBtn = await btRoot.QuerySelectorAsync(selector);
+                if (nextBtn != null) return nextBtn;
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning("Failed to get next button: {Error}", ex.Message);
-            return null;
         }
+
+        return null;
     }
 
     private ScrapedEventDto? ParseRawText(string rawText)
