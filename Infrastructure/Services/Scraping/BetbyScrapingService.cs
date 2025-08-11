@@ -45,7 +45,6 @@ public class BetbyScrapingService : IBetbyScrapingService
 
             // Primeiro vamos verificar se ainda existe Shadow DOM
             var hasShadowRoot = await CheckShadowRootExistsAsync(page, "#bt-root");
-            _logger.LogInformation("Shadow DOM exists: {HasShadow}", hasShadowRoot);
 
             IElementHandle? container = null;
 
@@ -75,39 +74,80 @@ public class BetbyScrapingService : IBetbyScrapingService
             // Aguarda os elementos carregarem
             await page.WaitForTimeoutAsync(3000);
 
-            // Tenta encontrar os cards com os novos seletores baseados na imagem
-            var eventCards = await FindEventCardsAsync(container);
+            // Debug: Vamos verificar se a paginação existe
+            var totalBets = await GetTotalBetsAsync(container);
+            var lastPage = totalBets > 0 ? (int)Math.Ceiling(totalBets / 24.0) : 1;
+            var nextButton = await GetNextButtonAsync(container);
 
-            if (eventCards.Count == 0)
+            if (totalBets > 0)
             {
-                _logger.LogWarning("No event cards found. Let's debug the page structure.");
-                await DebugPageStructureAsync(page, container);
-                return new List<ScrapedEventDto>();
+                _logger.LogInformation("Found {TotalBets} total events across {LastPage} pages", totalBets, lastPage);
             }
 
             var cleanedData = new List<ScrapedEventDto>();
 
-            foreach (var card in eventCards)
+            // Loop através das páginas
+            for (int currentPage = 1; currentPage <= lastPage; currentPage++)
             {
-                try
+                // Aguarda os cards carregarem na página atual
+                await page.WaitForTimeoutAsync(2000);
+
+                // Tenta encontrar os cards na página atual
+                var eventCards = await FindEventCardsAsync(container);
+
+                if (eventCards.Count == 0)
                 {
-                    var fullText = await card.InnerTextAsync();
-                    var parsed = ParseRawText(fullText);
+                    _logger.LogWarning("No event cards found on page {CurrentPage}", currentPage);
+                    break;
+                }
 
-                    if (parsed != null)
+                // Processa os cards da página atual
+                foreach (var card in eventCards)
+                {
+                    try
                     {
-                        // Tenta encontrar o link do evento
-                        var linkElement = await card.QuerySelectorAsync("a") ??
-                                        await card.QuerySelectorAsync("[href]");
-                        var href = linkElement != null ? await linkElement.GetAttributeAsync("href") : null;
+                        var fullText = await card.InnerTextAsync();
+                        var parsed = ParseRawText(fullText);
 
-                        parsed.Link = href;
-                        cleanedData.Add(parsed);
+                        if (parsed != null)
+                        {
+                            // Tenta encontrar o link do evento
+                            var linkElement = await card.QuerySelectorAsync("a") ??
+                                            await card.QuerySelectorAsync("[href]");
+                            var href = linkElement != null ? await linkElement.GetAttributeAsync("href") : null;
+
+                            parsed.Link = href;
+                            cleanedData.Add(parsed);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Failed to parse event card: {Error}", ex.Message);
                     }
                 }
-                catch (Exception ex)
+
+                // Se não é a última página e tem botão next, clica nele
+                if (currentPage < lastPage && nextButton != null)
                 {
-                    _logger.LogWarning("Failed to parse event card: {Error}", ex.Message);
+                    try
+                    {
+                        await nextButton.ClickAsync();
+
+                        // Aguarda a página carregar
+                        await page.WaitForTimeoutAsync(3000);
+
+                        // Aguarda pelos novos cards aparecerem
+                        await container.WaitForSelectorAsync("[data-editor-id=\"eventCard\"]:nth-child(1)",
+                            new ElementHandleWaitForSelectorOptions { State = WaitForSelectorState.Attached, Timeout = 10000 });
+
+                        // Atualiza a referência do botão next para a nova página
+                        nextButton = await GetNextButtonAsync(container);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to navigate to next page {NextPage}", currentPage + 1);
+                        break;
+                    }
                 }
             }
 
@@ -137,7 +177,7 @@ public class BetbyScrapingService : IBetbyScrapingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to check shadow root for {Selector}", selector);
+            _logger.LogWarning("Failed to check shadow root: {Error}", ex.Message);
             return false;
         }
     }
@@ -157,7 +197,6 @@ public class BetbyScrapingService : IBetbyScrapingService
 
             if (!isElement)
             {
-                _logger.LogWarning("Shadow root is not a valid document fragment");
                 return null;
             }
 
@@ -165,7 +204,7 @@ public class BetbyScrapingService : IBetbyScrapingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get shadow root for {Selector}", selector);
+            _logger.LogWarning("Failed to get shadow root: {Error}", ex.Message);
             return null;
         }
     }
@@ -189,7 +228,6 @@ public class BetbyScrapingService : IBetbyScrapingService
                 var elements = await container.QuerySelectorAllAsync(selector);
                 if (elements.Count > 0)
                 {
-                    _logger.LogInformation("Found {Count} elements with selector: {Selector}", elements.Count, selector);
                     return elements.ToList();
                 }
             }
@@ -202,33 +240,7 @@ public class BetbyScrapingService : IBetbyScrapingService
         return new List<IElementHandle>();
     }
 
-    private async Task DebugPageStructureAsync(IPage page, IElementHandle container)
-    {
-        try
-        {
-            // Loga a estrutura da página para debug
-            var outerHTML = await container.InnerHTMLAsync();
-            _logger.LogInformation("Container HTML structure (first 1000 chars): {HTML}",
-                outerHTML.Length > 1000 ? outerHTML.Substring(0, 1000) + "..." : outerHTML);
 
-            // Tenta encontrar qualquer div dentro do container
-            var allDivs = await container.QuerySelectorAllAsync("div");
-            _logger.LogInformation("Found {Count} div elements in container", allDivs.Count);
-
-            // Analisa as classes dos primeiros divs
-            for (int i = 0; i < Math.Min(10, allDivs.Count); i++)
-            {
-                var className = await allDivs[i].GetAttributeAsync("class");
-                var innerHTML = await allDivs[i].InnerHTMLAsync();
-                _logger.LogInformation("Div {Index}: class='{Class}', content length={Length}",
-                    i, className ?? "no-class", innerHTML?.Length ?? 0);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to debug page structure");
-        }
-    }
 
     private async Task DismissModalAsync(IPage page)
     {
@@ -246,12 +258,12 @@ public class BetbyScrapingService : IBetbyScrapingService
         }
     }
 
-    private async Task<int> GetTotalBetsAsync(IElementHandle btRoot)
+    private async Task<int> GetTotalBetsAsync(IElementHandle container)
     {
         try
         {
             // Tenta o seletor original primeiro
-            var btnContainer = await btRoot.QuerySelectorAsync("[data-editor-id=\"eventCardPaginator\"]");
+            var btnContainer = await container.QuerySelectorAsync("[data-editor-id=\"eventCardPaginator\"]");
 
             // Se não encontrar, tenta seletores alternativos
             if (btnContainer == null)
@@ -260,26 +272,61 @@ public class BetbyScrapingService : IBetbyScrapingService
                 {
                     "[class*=\"paginator\"]",
                     "[class*=\"pagination\"]",
-                    "div:has-text(\"of\")" // Divs que contêm "of" (como "1 of 10")
+                    "[class*=\"pager\"]",
+                    "div:has-text(\"of\")",
+                    "span:has-text(\"of\")"
                 };
 
                 foreach (var selector in possiblePaginatorSelectors)
                 {
-                    btnContainer = await btRoot.QuerySelectorAsync(selector);
-                    if (btnContainer != null) break;
+                    try
+                    {
+                        btnContainer = await container.QuerySelectorAsync(selector);
+                        if (btnContainer != null) break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Failed to query paginator selector {Selector}: {Error}", selector, ex.Message);
+                    }
                 }
             }
 
             if (btnContainer != null)
             {
-                var itemsText = await btnContainer.QuerySelectorAllAsync("span");
-                if (itemsText != null && itemsText.Count > 1)
+                var paginatorText = await btnContainer.InnerTextAsync();
+
+                // Tenta várias formas de extrair o número total
+                var patterns = new[]
                 {
-                    var text = await itemsText[1].InnerTextAsync();
-                    var match = Regex.Match(text, @"\d+$");
-                    if (match.Success && int.TryParse(match.Value, out var total))
+                    @"of\s+(\d+)",           // "1 of 150"
+                    @"\/\s*(\d+)",           // "1 / 150"
+                    @"total:\s*(\d+)",       // "total: 150"
+                    @"(\d+)\s*total",        // "150 total"
+                    @"\d+\s*-\s*\d+\s*of\s*(\d+)", // "1-24 of 150"
+                    @"(\d+)$"                // último número na string
+                };
+
+                foreach (var pattern in patterns)
+                {
+                    var match = Regex.Match(paginatorText, pattern, RegexOptions.IgnoreCase);
+                    if (match.Success && int.TryParse(match.Groups[1].Value, out var total))
                     {
                         return total;
+                    }
+                }
+
+                // Se não conseguiu extrair o padrão, tenta pegar spans com números
+                var itemsText = await btnContainer.QuerySelectorAllAsync("span");
+                if (itemsText != null && itemsText.Count > 0)
+                {
+                    for (int i = 0; i < itemsText.Count; i++)
+                    {
+                        var text = await itemsText[i].InnerTextAsync();
+                        var match = Regex.Match(text, @"\d+");
+                        if (match.Success && int.TryParse(match.Value, out var total) && total > 24)
+                        {
+                            return total;
+                        }
                     }
                 }
             }
@@ -292,11 +339,12 @@ public class BetbyScrapingService : IBetbyScrapingService
         return 0;
     }
 
-    private async Task<IElementHandle?> GetNextButtonAsync(IElementHandle btRoot)
+    private async Task<IElementHandle?> GetNextButtonAsync(IElementHandle container)
     {
         try
         {
-            var btnsContainer = await btRoot.QuerySelectorAllAsync("[data-editor-id=\"eventCardPaginatorArrow\"]");
+            // Tenta o seletor original primeiro
+            var btnsContainer = await container.QuerySelectorAllAsync("[data-editor-id=\"eventCardPaginatorArrow\"]");
             if (btnsContainer.Count > 1)
             {
                 return btnsContainer[1];
@@ -307,14 +355,59 @@ public class BetbyScrapingService : IBetbyScrapingService
             {
                 "button:has-text(\"Next\")",
                 "button:has-text(\">\")",
+                "button:has-text(\"›\")",
+                "button:has-text(\"»\")",
                 "[class*=\"next\"]",
-                "[class*=\"arrow\"]:last-child"
+                "[class*=\"arrow\"][class*=\"right\"]",
+                "[class*=\"pager\"] button:last-child",
+                "[aria-label*=\"next\"]",
+                "[aria-label*=\"Next\"]"
             };
 
             foreach (var selector in possibleNextSelectors)
             {
-                var nextBtn = await btRoot.QuerySelectorAsync(selector);
-                if (nextBtn != null) return nextBtn;
+                try
+                {
+                    var nextBtn = await container.QuerySelectorAsync(selector);
+                    if (nextBtn != null)
+                    {
+                        // Verifica se o botão não está desabilitado
+                        var isDisabled = await nextBtn.GetAttributeAsync("disabled");
+                        var ariaDisabled = await nextBtn.GetAttributeAsync("aria-disabled");
+
+                        if (isDisabled == null && ariaDisabled != "true")
+                        {
+                            return nextBtn;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Failed to query next button selector {Selector}: {Error}", selector, ex.Message);
+                }
+            }
+
+            // Se não encontrou com seletores específicos, tenta encontrar qualquer botão que pareça ser de paginação
+            var allButtons = await container.QuerySelectorAllAsync("button");
+
+            for (int i = 0; i < allButtons.Count; i++)
+            {
+                var button = allButtons[i];
+                var buttonText = await button.InnerTextAsync();
+
+                // Verifica se é um botão de próxima página baseado no texto
+                if (!string.IsNullOrEmpty(buttonText))
+                {
+                    var text = buttonText.Trim().ToLower();
+                    if (text.Contains("next") || text == ">" || text == "›" || text == "»")
+                    {
+                        var isDisabled = await button.GetAttributeAsync("disabled");
+                        if (isDisabled == null)
+                        {
+                            return button;
+                        }
+                    }
+                }
             }
         }
         catch (Exception ex)
